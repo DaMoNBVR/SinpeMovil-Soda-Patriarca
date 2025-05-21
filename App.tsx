@@ -1,11 +1,14 @@
 import React from 'react';
-import { DataProvider } from './src/context/DataContext';
+import { NavigationContainer } from '@react-navigation/native';
 import StackNavigator from './src/navigation/StackNavigator';
+import { DataProvider } from './src/context/DataContext';
 
 export default function App() {
   return (
-    <DataProvider>
-      <StackNavigator />
-    </DataProvider>
+    <NavigationContainer>
+      <DataProvider>
+        <StackNavigator />
+      </DataProvider>
+    </NavigationContainer>
   );
 }
