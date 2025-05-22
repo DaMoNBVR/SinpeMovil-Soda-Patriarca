@@ -3,7 +3,8 @@ import React, { useState, useContext } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
 import { DataContext } from '../context/DataContext';
 import { Purchase } from '../models';
-import { v4 as uuidv4 } from 'uuid'; // para generar IDs únicas
+import uuid from 'react-native-uuid';
+import { Picker } from '@react-native-picker/picker';
 
 export default function RegisterPurchaseScreen() {
   const dataContext = useContext(DataContext);
@@ -11,12 +12,10 @@ export default function RegisterPurchaseScreen() {
 
   const { persons, addPurchase } = dataContext;
 
-  // Estado para inputs
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
 
-  // Validar y guardar compra
   const handleSave = () => {
     if (!selectedPersonId) {
       Alert.alert('Error', 'Por favor selecciona una persona');
@@ -29,9 +28,9 @@ export default function RegisterPurchaseScreen() {
     }
 
     const newPurchase: Purchase = {
-      id: uuidv4(),
+      id: uuid.v4() as string,
       personId: selectedPersonId,
-      date: new Date().toISOString().split('T')[0], // solo fecha yyyy-mm-dd
+      date: new Date().toISOString().split('T')[0],
       amount: parsedAmount,
       description: description.trim(),
     };
@@ -45,13 +44,17 @@ export default function RegisterPurchaseScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.label}>Selecciona persona:</Text>
-      {/* Aquí deberías poner un picker o dropdown para elegir persona */}
-      <TextInput
-        style={styles.input}
-        placeholder="ID de persona (temporal)"
-        value={selectedPersonId}
-        onChangeText={setSelectedPersonId}
-      />
+      <View style={styles.pickerWrapper}>
+        <Picker
+          selectedValue={selectedPersonId}
+          onValueChange={(itemValue) => setSelectedPersonId(itemValue)}
+        >
+          <Picker.Item label="Selecciona una persona" value="" />
+          {persons.map((person) => (
+            <Picker.Item key={person.id} label={person.name} value={person.id} />
+          ))}
+        </Picker>
+      </View>
 
       <Text style={styles.label}>Monto:</Text>
       <TextInput
@@ -83,5 +86,12 @@ const styles = StyleSheet.create({
     borderColor: '#aaa',
     borderRadius: 4,
     padding: 8,
+    marginBottom: 10,
+  },
+  pickerWrapper: {
+    borderWidth: 1,
+    borderColor: '#aaa',
+    borderRadius: 4,
+    marginBottom: 10,
   },
 });

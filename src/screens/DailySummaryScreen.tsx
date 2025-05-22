@@ -15,10 +15,11 @@ export default function DailySummaryScreen() {
   }
 
   const { purchases, persons } = context;
-  const today = new Date();
+
+  const todayStr = new Date().toISOString().split('T')[0];
 
   const todayPurchases = purchases.filter((purchase) =>
-    isSameDay(new Date(purchase.date), today)
+    purchase.date === todayStr
   );
 
   const summary = getSummaryByPerson(todayPurchases, persons);
