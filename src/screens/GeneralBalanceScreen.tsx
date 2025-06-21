@@ -1,9 +1,12 @@
 import React, { useContext } from 'react';
 import { View, Text, FlatList, StyleSheet } from 'react-native';
 import { DataContext } from '../context/DataContext';
+import { useTheme } from '../context/ThemeContext';
 
 export default function GeneralBalanceScreen() {
   const context = useContext(DataContext);
+  const { theme } = useTheme();
+
   if (!context) return <Text>Error: DataContext no disponible</Text>;
 
   const { persons, purchases, payments } = context;
@@ -26,8 +29,9 @@ export default function GeneralBalanceScreen() {
     };
   });
 
-  // Ordenar: primero quienes tienen deuda, luego saldos positivos
   const sorted = balances.sort((a, b) => a.balance - b.balance);
+
+  const styles = getStyles(theme);
 
   return (
     <View style={styles.container}>
@@ -45,14 +49,30 @@ export default function GeneralBalanceScreen() {
             {item.name}: {item.balance < 0 ? 'Deuda' : 'Saldo'} ₡{Math.abs(item.balance).toFixed(2)}
           </Text>
         )}
-        ListEmptyComponent={<Text>No hay movimientos.</Text>}
+        ListEmptyComponent={<Text style={styles.text}>No hay movimientos.</Text>}
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 12 },
-  item: { fontSize: 18, marginVertical: 6 },
-});
+const getStyles = (theme: 'light' | 'dark') =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 16,
+      backgroundColor: theme === 'dark' ? '#121212' : '#fff',
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      marginBottom: 12,
+      color: theme === 'dark' ? '#fff' : '#000',
+    },
+    item: {
+      fontSize: 18,
+      marginVertical: 6,
+    },
+    text: {
+      color: theme === 'dark' ? '#fff' : '#000',
+    },
+  });

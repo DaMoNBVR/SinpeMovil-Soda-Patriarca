@@ -12,12 +12,16 @@ import {
 import { DataContext } from '../context/DataContext';
 import { Payment } from '../models';
 import uuid from 'react-native-uuid';
+import { useTheme } from '../context/ThemeContext';
 
 export default function RegisterPaymentScreen() {
+  const { theme } = useTheme();
+  const styles = getStyles(theme);
+
   const context = useContext(DataContext);
   if (!context) return <Text>Error: DataContext no disponible</Text>;
 
-  const { persons, addPayment, updatePrepaidAmount } = context;
+  const { persons, addPayment } = context;
 
   const [search, setSearch] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState('');
@@ -85,6 +89,7 @@ export default function RegisterPaymentScreen() {
           <TextInput
             style={styles.input}
             placeholder="Nombre o inicial"
+            placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
             value={search}
             onChangeText={setSearch}
             onFocus={() => setInputFocused(true)}
@@ -104,7 +109,7 @@ export default function RegisterPaymentScreen() {
                     setSearch('');
                   }}
                 >
-                  <Text>
+                  <Text style={styles.itemText}>
                     {item.name} {item.isFavorite ? '⭐' : ''}
                   </Text>
                 </TouchableOpacity>
@@ -118,6 +123,7 @@ export default function RegisterPaymentScreen() {
       <TextInput
         style={styles.input}
         placeholder="₡"
+        placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
         keyboardType="numeric"
         value={amount}
         onChangeText={setAmount}
@@ -128,34 +134,47 @@ export default function RegisterPaymentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { padding: 20 },
-  label: { marginTop: 10, marginBottom: 5 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#aaa',
-    borderRadius: 4,
-    padding: 8,
-    marginBottom: 10,
-  },
-  selectedRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  selected: {
-    fontStyle: 'italic',
-    color: 'green',
-  },
-  changeBtn: {
-    color: '#007bff',
-    fontWeight: 'bold',
-  },
-  item: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderColor: '#ddd',
-  },
-});
+const getStyles = (theme: 'light' | 'dark') =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 20,
+      backgroundColor: theme === 'dark' ? '#121212' : '#fff',
+    },
+    label: {
+      marginTop: 10,
+      marginBottom: 5,
+      color: theme === 'dark' ? '#fff' : '#000',
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: theme === 'dark' ? '#666' : '#aaa',
+      borderRadius: 4,
+      padding: 8,
+      marginBottom: 10,
+      color: theme === 'dark' ? '#fff' : '#000',
+    },
+    selectedRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    selected: {
+      fontStyle: 'italic',
+      color: 'green',
+    },
+    changeBtn: {
+      color: '#007bff',
+      fontWeight: 'bold',
+    },
+    item: {
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      borderBottomWidth: 1,
+      borderColor: theme === 'dark' ? '#444' : '#ddd',
+    },
+    itemText: {
+      color: theme === 'dark' ? '#fff' : '#000',
+    },
+  });

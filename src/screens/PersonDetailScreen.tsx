@@ -5,11 +5,7 @@ import { DataContext } from '../context/DataContext';
 import { RootStackParamList } from '../navigation/StackNavigator';
 import uuid from 'react-native-uuid';
 import { Payment } from '../models';
-
-const isSameDay = (d1: Date, d2: Date) =>
-  d1.getFullYear() === d2.getFullYear() &&
-  d1.getMonth() === d2.getMonth() &&
-  d1.getDate() === d2.getDate();
+import { useTheme } from '../context/ThemeContext';
 
 const getISOWeek = (date: Date): number => {
   const tmpDate = new Date(date.getTime());
@@ -32,23 +28,23 @@ type PersonDetailRouteProp = RouteProp<RootStackParamList, 'PersonDetail'>;
 export default function PersonDetailScreen() {
   const { params } = useRoute<PersonDetailRouteProp>();
   const { personId } = params;
+  const { theme } = useTheme();
 
   const context = useContext(DataContext);
   if (!context) return <Text>Error: contexto no disponible</Text>;
 
   const { persons, purchases, addPayment, updatePrepaidAmount } = context;
-
   const person = persons.find((p) => p.id === personId);
   if (!person) return <Text>Persona no encontrada</Text>;
 
-  const today = new Date();
+  const todayStr = new Date().toISOString().split('T')[0];
 
   const dailyPurchases = purchases.filter(
-    (p) => p.personId === personId && isSameDay(new Date(p.date), today)
+    (p) => p.personId === personId && p.date === todayStr
   );
 
   const weeklyPurchases = purchases.filter(
-    (p) => p.personId === personId && isSameWeek(new Date(p.date), today)
+    (p) => p.personId === personId && isSameWeek(new Date(p.date), new Date())
   );
 
   const totalWeekly = weeklyPurchases.reduce((sum, p) => sum + p.amount, 0);
@@ -62,7 +58,7 @@ export default function PersonDetailScreen() {
       id: uuid.v4() as string,
       personId: person.id,
       amount: debt,
-      date: new Date().toISOString().split('T')[0],
+      date: todayStr,
       type: 'debtPayment',
     };
 
@@ -70,6 +66,8 @@ export default function PersonDetailScreen() {
     updatePrepaidAmount(person.id, debt);
     Alert.alert('Éxito', 'La deuda ha sido pagada');
   };
+
+  const styles = createStyles(theme);
 
   return (
     <View style={styles.container}>
@@ -94,7 +92,7 @@ export default function PersonDetailScreen() {
         renderItem={({ item }) => (
           <Text style={styles.item}>₡{item.amount} - {item.description || 'Sin descripción'}</Text>
         )}
-        ListEmptyComponent={<Text>No hay compras hoy.</Text>}
+        ListEmptyComponent={<Text style={styles.item}>No hay compras hoy.</Text>}
       />
 
       <Text style={styles.section}>Total semanal: ₡{totalWeekly.toFixed(2)}</Text>
@@ -102,10 +100,36 @@ export default function PersonDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 26, fontWeight: 'bold', marginBottom: 10 },
-  subtitle: { fontSize: 18, marginBottom: 16 },
-  section: { fontSize: 20, fontWeight: '600', marginTop: 20, marginBottom: 8 },
-  item: { fontSize: 16, paddingVertical: 4 },
-});
+function createStyles(theme: 'light' | 'dark') {
+  const isDark = theme === 'dark';
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 16,
+      backgroundColor: isDark ? '#111' : '#fff',
+    },
+    title: {
+      fontSize: 26,
+      fontWeight: 'bold',
+      marginBottom: 10,
+      color: isDark ? '#fff' : '#000',
+    },
+    subtitle: {
+      fontSize: 18,
+      marginBottom: 16,
+      color: isDark ? '#ccc' : '#333',
+    },
+    section: {
+      fontSize: 20,
+      fontWeight: '600',
+      marginTop: 20,
+      marginBottom: 8,
+      color: isDark ? '#fff' : '#000',
+    },
+    item: {
+      fontSize: 16,
+      paddingVertical: 4,
+      color: isDark ? '#ddd' : '#000',
+    },
+  });
+}
