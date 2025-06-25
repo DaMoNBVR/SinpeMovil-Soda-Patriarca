@@ -1,15 +1,18 @@
 import React from 'react';
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
-import StackNavigator from './src/navigation/StackNavigator';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import StackNavigator from './src/navigation/StackNavigator';
+import LoginScreen from './src/screens/LoginScreen';
 
 function AppNavigator() {
   const { theme } = useTheme();
+  const { username } = useAuth(); // 👈 Aquí se revisa si hay sesión
 
   return (
     <NavigationContainer theme={theme === 'dark' ? DarkTheme : DefaultTheme}>
-      <StackNavigator />
+      {username ? <StackNavigator /> : <LoginScreen />}
     </NavigationContainer>
   );
 }
@@ -17,9 +20,11 @@ function AppNavigator() {
 export default function App() {
   return (
     <ThemeProvider>
-      <DataProvider>
-        <AppNavigator />
-      </DataProvider>
+      <AuthProvider>
+        <DataProvider>
+          <AppNavigator />
+        </DataProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

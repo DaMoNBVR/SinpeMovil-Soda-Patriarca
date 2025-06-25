@@ -1,11 +1,8 @@
 // src/models.ts
 
-export type PersonType = 'student' | 'teacher';
-
 export interface Person {
   id: string;           // identificador único (puede ser UUID o código)
   name: string;
-  type: PersonType;
   prepaidAmount: number;
   isFavorite?: boolean; // monto pagado por adelantado (en colones)
 }
@@ -23,5 +20,14 @@ export interface Payment {
   personId: string;
   date: string;
   amount: number;       // pago que hace el padre (puede ser para abonar deuda o prepago)
-  type: 'prepaid' | 'debtPayment';
+  type: 'prepaid' | 'debtPayment' | 'manualAdjustment';
+  comment?: string;
 }
+
+// src/models.ts
+export interface User {
+  id: string;
+  username: string;
+  password: string;
+}
+

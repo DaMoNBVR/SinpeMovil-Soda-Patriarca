@@ -6,22 +6,7 @@ import { RootStackParamList } from '../navigation/StackNavigator';
 import uuid from 'react-native-uuid';
 import { Payment } from '../models';
 import { useTheme } from '../context/ThemeContext';
-
-const getISOWeek = (date: Date): number => {
-  const tmpDate = new Date(date.getTime());
-  tmpDate.setHours(0, 0, 0, 0);
-  tmpDate.setDate(tmpDate.getDate() + 3 - ((tmpDate.getDay() + 6) % 7));
-  const firstThursday = new Date(tmpDate.getFullYear(), 0, 4);
-  return (
-    1 +
-    Math.round(
-      ((tmpDate.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getDay() + 6) % 7)) / 7
-    )
-  );
-};
-
-const isSameWeek = (d1: Date, d2: Date) =>
-  getISOWeek(d1) === getISOWeek(d2) && d1.getFullYear() === d2.getFullYear();
+import { sharePDFForPerson } from '../utils/pdfGenerator';
 
 type PersonDetailRouteProp = RouteProp<RootStackParamList, 'PersonDetail'>;
 
@@ -29,26 +14,37 @@ export default function PersonDetailScreen() {
   const { params } = useRoute<PersonDetailRouteProp>();
   const { personId } = params;
   const { theme } = useTheme();
+  const styles = createStyles(theme);
 
   const context = useContext(DataContext);
   if (!context) return <Text>Error: contexto no disponible</Text>;
 
-  const { persons, purchases, addPayment, updatePrepaidAmount } = context;
+  const { persons, purchases, payments, addPayment, updatePrepaidAmount } = context;
   const person = persons.find((p) => p.id === personId);
   if (!person) return <Text>Persona no encontrada</Text>;
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const dailyPurchases = purchases.filter(
-    (p) => p.personId === personId && p.date === todayStr
-  );
+  const personPurchases = purchases
+    .filter((p) => p.personId === personId)
+    .sort((a, b) => b.date.localeCompare(a.date));
 
-  const weeklyPurchases = purchases.filter(
-    (p) => p.personId === personId && isSameWeek(new Date(p.date), new Date())
-  );
+  const personPayments = payments
+    .filter((p) => p.personId === personId)
+    .sort((a, b) => b.date.localeCompare(a.date));
 
-  const totalWeekly = weeklyPurchases.reduce((sum, p) => sum + p.amount, 0);
-  const saldo = person.prepaidAmount - totalWeekly;
+  const totalPurchases = personPurchases.reduce((sum, p) => sum + p.amount, 0);
+  const totalPayments = personPayments.reduce((sum, p) => sum + p.amount, 0);
+  const saldo = totalPayments - totalPurchases;
+
+  const traducirTipo = (type: string) => {
+    switch (type) {
+      case 'prepaid': return 'Pago adelantado';
+      case 'debtPayment': return 'Pago de deuda';
+      case 'manualAdjustment': return 'Ajuste manual';
+      default: return 'Otro';
+    }
+  };
 
   const handlePayDebt = () => {
     const debt = -saldo;
@@ -67,17 +63,14 @@ export default function PersonDetailScreen() {
     Alert.alert('Éxito', 'La deuda ha sido pagada');
   };
 
-  const styles = createStyles(theme);
+  const handleExportPDF = () => {
+    sharePDFForPerson(person, personPurchases, personPayments);
+  };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{person.name}</Text>
-      <Text
-        style={[
-          styles.subtitle,
-          { color: saldo < 0 ? 'red' : 'green' },
-        ]}
-      >
+      <Text style={[styles.subtitle, { color: saldo < 0 ? 'red' : 'green' }]}>
         {saldo < 0 ? 'Deuda: ' : 'Saldo a favor: '}₡{Math.abs(saldo).toFixed(2)}
       </Text>
 
@@ -85,17 +78,32 @@ export default function PersonDetailScreen() {
         <Button title="Pagar deuda" color="#f05454" onPress={handlePayDebt} />
       )}
 
-      <Text style={styles.section}>Compras del día:</Text>
+      <View style={{ marginVertical: 10 }}></View>
+      <Button title="Exportar historial en PDF" onPress={handleExportPDF} />
+
+      <Text style={styles.section}>Compras:</Text>
       <FlatList
-        data={dailyPurchases}
+        data={personPurchases}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <Text style={styles.item}>₡{item.amount} - {item.description || 'Sin descripción'}</Text>
+          <Text style={styles.item}>
+            📅 {item.date} | ₡{item.amount} - {item.description || 'Sin descripción'}
+          </Text>
         )}
-        ListEmptyComponent={<Text style={styles.item}>No hay compras hoy.</Text>}
+        ListEmptyComponent={<Text style={styles.item}>No hay compras registradas.</Text>}
       />
 
-      <Text style={styles.section}>Total semanal: ₡{totalWeekly.toFixed(2)}</Text>
+      <Text style={styles.section}>Pagos y ajustes:</Text>
+      <FlatList
+        data={personPayments}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <Text style={styles.item}>
+            📅 {item.date} | ₡{item.amount} - {traducirTipo(item.type)}{item.comment ? ` (${item.comment})` : ''}
+          </Text>
+        )}
+        ListEmptyComponent={<Text style={styles.item}>No hay pagos ni ajustes.</Text>}
+      />
     </View>
   );
 }

@@ -10,80 +10,77 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { DataContext } from '../context/DataContext';
-import { Payment } from '../models';
-import uuid from 'react-native-uuid';
 import { useTheme } from '../context/ThemeContext';
+import uuid from 'react-native-uuid';
+import { Payment } from '../models';
 
-export default function RegisterPaymentScreen() {
+export default function ManualAdjustmentScreen() {
   const { theme } = useTheme();
-  const styles = getStyles(theme);
+  const isDark = theme === 'dark';
 
   const context = useContext(DataContext);
   if (!context) return <Text>Error: DataContext no disponible</Text>;
 
-  const { persons, purchases, payments, addPayment } = context;
+  const { persons, addPayment, updatePrepaidAmount } = context;
 
   const [search, setSearch] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [amount, setAmount] = useState('');
+  const [comment, setComment] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
 
-  const selectedPerson = persons.find((p) => p.id === selectedPersonId);
+  const selectedPerson = persons.find(p => p.id === selectedPersonId);
 
   const filteredPersons = persons
-    .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+    .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       if (a.isFavorite && !b.isFavorite) return -1;
       if (!a.isFavorite && b.isFavorite) return 1;
       return a.name.localeCompare(b.name);
     });
 
-  const currentBalance = (() => {
-    if (!selectedPerson) return 0;
-    const personPurchases = purchases.filter((p) => p.personId === selectedPerson.id);
-    const personPayments = payments.filter((p) => p.personId === selectedPerson.id);
-    const totalPurchases = personPurchases.reduce((sum, p) => sum + p.amount, 0);
-    const totalPayments = personPayments.reduce((sum, p) => sum + p.amount, 0);
-    return totalPayments - totalPurchases;
-  })();
-
-  const handleRegisterPayment = () => {
-    if (!selectedPersonId) {
-      Alert.alert('Error', 'Selecciona una persona');
-      return;
-    }
-
+  const handleAdjust = () => {
+    if (!selectedPersonId) return Alert.alert('Error', 'Selecciona una persona');
     const parsedAmount = parseFloat(amount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert('Error', 'Monto inválido');
-      return;
-    }
+    if (isNaN(parsedAmount) || parsedAmount === 0) return Alert.alert('Error', 'Monto inválido');
 
-    const newPayment: Payment = {
-      id: uuid.v4() as string,
-      personId: selectedPersonId,
-      amount: parsedAmount,
-      date: new Date().toISOString().split('T')[0],
-      type: currentBalance < 0 ? 'debtPayment' : 'prepaid',
-    };
-
-    addPayment(newPayment);
-    Alert.alert('Éxito', 'Pago registrado');
-    setAmount('');
-    setSelectedPersonId('');
-    setSearch('');
-    setInputFocused(false);
+    Alert.alert(
+      'Confirmar ajuste',
+      `¿Aplicar ajuste de ${parsedAmount > 0 ? '₡' + parsedAmount : `-₡${Math.abs(parsedAmount)}`} a ${selectedPerson?.name}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Aceptar',
+          onPress: () => {
+            const newPayment: Payment = {
+              id: uuid.v4() as string,
+              personId: selectedPersonId,
+              amount: parsedAmount,
+              date: new Date().toISOString().split('T')[0],
+              type: 'manualAdjustment',
+              comment,
+            };
+            addPayment(newPayment);
+            updatePrepaidAmount(selectedPersonId, parsedAmount);
+            setSearch('');
+            setSelectedPersonId('');
+            setAmount('');
+            setComment('');
+            Alert.alert('Éxito', 'Ajuste aplicado');
+          },
+        },
+      ]
+    );
   };
+
+  const styles = createStyles(isDark);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Buscar persona:</Text>
-
+      <Text style={styles.label}>Seleccionar persona:</Text>
       {selectedPerson ? (
         <View style={styles.selectedRow}>
-          <Text style={styles.selected}>
-            Seleccionado: {selectedPerson.name} {selectedPerson.isFavorite ? '⭐' : ''}
-          </Text>
+          <Text style={styles.selected}>Seleccionado: {selectedPerson.name}</Text>
           <TouchableOpacity
             onPress={() => {
               setSelectedPersonId('');
@@ -98,7 +95,7 @@ export default function RegisterPaymentScreen() {
           <TextInput
             style={styles.input}
             placeholder="Nombre o inicial"
-            placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
+            placeholderTextColor={isDark ? '#999' : '#666'}
             value={search}
             onChangeText={setSearch}
             onFocus={() => setInputFocused(true)}
@@ -106,7 +103,7 @@ export default function RegisterPaymentScreen() {
           {inputFocused && (
             <FlatList
               data={filteredPersons}
-              keyExtractor={(item) => item.id}
+              keyExtractor={item => item.id}
               style={{ maxHeight: 150 }}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
@@ -118,7 +115,7 @@ export default function RegisterPaymentScreen() {
                     setSearch('');
                   }}
                 >
-                  <Text style={styles.itemText}>
+                  <Text style={{ color: isDark ? '#eee' : '#000' }}>
                     {item.name} {item.isFavorite ? '⭐' : ''}
                   </Text>
                 </TouchableOpacity>
@@ -128,43 +125,55 @@ export default function RegisterPaymentScreen() {
         </>
       )}
 
-      <Text style={styles.label}>Monto del pago:</Text>
+      <Text style={styles.label}>Monto del ajuste (₡):</Text>
       <TextInput
         style={styles.input}
-        placeholder="₡"
-        placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
         keyboardType="numeric"
+        placeholder="Ej: 500 o -500"
+        placeholderTextColor={isDark ? '#999' : '#666'}
         value={amount}
         onChangeText={setAmount}
       />
 
-      <Button
-        title={selectedPerson && currentBalance < 0 ? 'Pagar deuda' : 'Registrar pago'}
-        onPress={handleRegisterPayment}
+      <Text style={styles.label}>Comentario:</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Razón del ajuste"
+        placeholderTextColor={isDark ? '#999' : '#666'}
+        value={comment}
+        onChangeText={setComment}
       />
+
+      <Button title="Aplicar ajuste" onPress={handleAdjust} />
     </View>
   );
 }
 
-const getStyles = (theme: 'light' | 'dark') =>
-  StyleSheet.create({
+function createStyles(isDark: boolean) {
+  return StyleSheet.create({
     container: {
       flex: 1,
       padding: 20,
-      backgroundColor: theme === 'dark' ? '#121212' : '#fff',
+      backgroundColor: isDark ? '#111' : '#fff',
     },
     label: {
       marginTop: 10,
       marginBottom: 5,
-      color: theme === 'dark' ? '#fff' : '#000',
+      color: isDark ? '#eee' : '#000',
     },
     input: {
       borderWidth: 1,
-      borderColor: theme === 'dark' ? '#666' : '#aaa',
+      borderColor: isDark ? '#888' : '#aaa',
       borderRadius: 4,
       padding: 8,
       marginBottom: 10,
-      color: theme === 'dark' ? '#fff' : '#000',
+      color: isDark ? '#fff' : '#000',
+    },
+    item: {
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      borderBottomWidth: 1,
+      borderColor: isDark ? '#444' : '#ddd',
     },
     selectedRow: {
       flexDirection: 'row',
@@ -174,19 +183,11 @@ const getStyles = (theme: 'light' | 'dark') =>
     },
     selected: {
       fontStyle: 'italic',
-      color: 'green',
+      color: isDark ? '#aaffaa' : 'green',
     },
     changeBtn: {
       color: '#007bff',
       fontWeight: 'bold',
     },
-    item: {
-      paddingVertical: 8,
-      paddingHorizontal: 10,
-      borderBottomWidth: 1,
-      borderColor: theme === 'dark' ? '#444' : '#ddd',
-    },
-    itemText: {
-      color: theme === 'dark' ? '#fff' : '#000',
-    },
   });
+}

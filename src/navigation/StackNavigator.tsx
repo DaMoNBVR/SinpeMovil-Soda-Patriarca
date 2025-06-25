@@ -2,6 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../context/ThemeContext';
 
+import LoginScreen from '../screens/LoginScreen';
 import PeopleListScreen from '../screens/PeopleListScreen';
 import HomeScreen from '../screens/HomeScreen';
 import RegisterPurchaseScreen from '../screens/RegisterPurchaseScreen';
@@ -10,8 +11,11 @@ import DailySummaryScreen from '../screens/DailySummaryScreen';
 import WeeklySummaryScreen from '../screens/WeeklySummaryScreen';
 import PersonDetailScreen from '../screens/PersonDetailScreen';
 import GeneralBalanceScreen from '../screens/GeneralBalanceScreen';
+import ManualAdjustmentScreen from '../screens/ManualAdjustmentScreen';
+import ManagePeopleScreen from '../screens/ManagePeopleScreen';
 
 export type RootStackParamList = {
+  Login: undefined;
   Home: undefined;
   RegisterPurchase: undefined;
   RegisterPayment: undefined;
@@ -20,6 +24,8 @@ export type RootStackParamList = {
   PeopleList: undefined;
   PersonDetail: { personId: string };
   GeneralBalance: undefined;
+  ManualAdjustment: undefined;
+  ManagePeople: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -42,14 +48,16 @@ export default function StackNavigator() {
         headerTitleAlign: 'center',
       }}
     >
-      <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="PeopleList" component={PeopleListScreen} />
-      <Stack.Screen name="RegisterPurchase" component={RegisterPurchaseScreen} />
-      <Stack.Screen name="RegisterPayment" component={RegisterPaymentScreen} />
-      <Stack.Screen name="DailySummary" component={DailySummaryScreen} />
-      <Stack.Screen name="WeeklySummary" component={WeeklySummaryScreen} />
-      <Stack.Screen name="PersonDetail" component={PersonDetailScreen} />
-      <Stack.Screen name="GeneralBalance" component={GeneralBalanceScreen} />
+      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Inicio' }} />
+      <Stack.Screen name="PeopleList" component={PeopleListScreen} options={{ title: 'Listado de Personas' }} />
+      <Stack.Screen name="RegisterPurchase" component={RegisterPurchaseScreen} options={{ title: 'Nueva Compra' }} />
+      <Stack.Screen name="RegisterPayment" component={RegisterPaymentScreen} options={{ title: 'Nuevo Pago' }} />
+      <Stack.Screen name="DailySummary" component={DailySummaryScreen} options={{ title: 'Resumen Diario' }} />
+      <Stack.Screen name="WeeklySummary" component={WeeklySummaryScreen} options={{ title: 'Resumen Semanal' }} />
+      <Stack.Screen name="PersonDetail" component={PersonDetailScreen} options={{ title: 'Detalle de Persona' }} />
+      <Stack.Screen name="GeneralBalance" component={GeneralBalanceScreen} options={{ title: 'Balance General' }} />
+      <Stack.Screen name="ManualAdjustment" component={ManualAdjustmentScreen} options={{ title: 'Ajuste Manual' }} />
+      <Stack.Screen name="ManagePeople" component={ManagePeopleScreen} options={{ title: 'Gestión de Personas' }} />
     </Stack.Navigator>
   );
 }

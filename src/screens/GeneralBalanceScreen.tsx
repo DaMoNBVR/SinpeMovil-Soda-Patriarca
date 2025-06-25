@@ -1,7 +1,8 @@
 import React, { useContext } from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Button } from 'react-native';
 import { DataContext } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
+import { generatePDFReport } from '../utils/pdfGenerator';
 
 export default function GeneralBalanceScreen() {
   const context = useContext(DataContext);
@@ -29,13 +30,28 @@ export default function GeneralBalanceScreen() {
     };
   });
 
-  const sorted = balances.sort((a, b) => a.balance - b.balance);
+  const sorted = balances.sort((a, b) => a.name.localeCompare(b.name)); // <-- Orden alfabético
 
   const styles = getStyles(theme);
+
+  const handleExportPDF = async () => {
+    const content = `
+      <h2>Balance General</h2>
+      ${sorted.map((item) => `
+        <div style="color: ${item.balance < 0 ? 'red' : 'green'};">
+          ${item.name}: ${item.balance < 0 ? 'Deuda' : 'Saldo'} ₡${Math.abs(item.balance).toFixed(2)}
+        </div>
+      `).join('')}
+    `;
+    await generatePDFReport('Balance General', content);
+  };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Balance General</Text>
+      <Button title="Exportar PDF" onPress={handleExportPDF} />
+
+      <View style={{ marginVertical: 5 }}></View>
       <FlatList
         data={sorted}
         keyExtractor={(item) => item.personId}
