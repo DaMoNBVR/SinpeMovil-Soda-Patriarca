@@ -3,7 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAPQhmnNl1i3O4oE_p06J2LmNHQuvG1yR0",
+  apiKey: "process.env.EXPO_PUBLIC_FIREBASE_API_KEY",
   authDomain: "sinpe-sodapatriarca.firebaseapp.com",
   projectId: "sinpe-sodapatriarca",
   storageBucket: "sinpe-sodapatriarca.firebasestorage.app",
