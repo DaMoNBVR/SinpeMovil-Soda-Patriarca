@@ -1,5 +1,5 @@
 import React, { useContext } from 'react';
-import { View, Text, FlatList, StyleSheet, Button, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Button, Alert, Linking } from 'react-native';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { DataContext } from '../context/DataContext';
 import { RootStackParamList } from '../navigation/StackNavigator';
@@ -7,6 +7,7 @@ import uuid from 'react-native-uuid';
 import { Payment } from '../models';
 import { useTheme } from '../context/ThemeContext';
 import { sharePDFForPerson } from '../utils/pdfGenerator';
+import { getLocalDate } from '../utils/dateUtils';
 
 type PersonDetailRouteProp = RouteProp<RootStackParamList, 'PersonDetail'>;
 
@@ -67,9 +68,33 @@ export default function PersonDetailScreen() {
     sharePDFForPerson(person, personPurchases, personPayments);
   };
 
+  const handleWhatsApp = () => {
+    if (!person.guardianPhone) {
+      Alert.alert('No disponible', 'Esta persona no tiene número registrado.');
+      return;
+    }
+
+    const mensaje = person.guardianName
+      ? `Hola ${person.guardianName},\n\nEste es el resumen actual de ${person.name}:\nSaldo: ${saldo < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldo).toFixed(2)}.\n\nGracias.`
+      : `Hola ${person.name}\n\nEste es tu resumen actual\nSaldo: ${saldo < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldo).toFixed(2)}.\n\nGracias.`;
+
+    const url = `https://wa.me/${person.guardianPhone.replace(/\D/g, '')}?text=${encodeURIComponent(mensaje)}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Error', 'No se pudo abrir WhatsApp.');
+    });
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{person.name}</Text>
+
+      {person.guardianName && (
+        <Text style={styles.subinfo}>Encargado: {person.guardianName}</Text>
+      )}
+      {person.guardianPhone && (
+        <Text style={styles.subinfo}>📞 {person.guardianPhone}</Text>
+      )}
+
       <Text style={[styles.subtitle, { color: saldo < 0 ? 'red' : 'green' }]}>
         {saldo < 0 ? 'Deuda: ' : 'Saldo a favor: '}₡{Math.abs(saldo).toFixed(2)}
       </Text>
@@ -78,8 +103,15 @@ export default function PersonDetailScreen() {
         <Button title="Pagar deuda" color="#f05454" onPress={handlePayDebt} />
       )}
 
-      <View style={{ marginVertical: 10 }}></View>
+      <View style={{ marginVertical: 10 }} />
       <Button title="Exportar historial en PDF" onPress={handleExportPDF} />
+
+      {person.guardianPhone && (
+        <>
+          <View style={{ marginVertical: 10 }} />
+          <Button title="Enviar por WhatsApp" color="#25D366" onPress={handleWhatsApp} />
+        </>
+      )}
 
       <Text style={styles.section}>Compras:</Text>
       <FlatList
@@ -87,7 +119,7 @@ export default function PersonDetailScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <Text style={styles.item}>
-            📅 {item.date} | ₡{item.amount} - {item.description || 'Sin descripción'}
+            📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {item.description || 'Sin descripción'}
           </Text>
         )}
         ListEmptyComponent={<Text style={styles.item}>No hay compras registradas.</Text>}
@@ -99,7 +131,7 @@ export default function PersonDetailScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <Text style={styles.item}>
-            📅 {item.date} | ₡{item.amount} - {traducirTipo(item.type)}{item.comment ? ` (${item.comment})` : ''}
+            📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {traducirTipo(item.type)}{item.comment ? ` (${item.comment})` : ''}
           </Text>
         )}
         ListEmptyComponent={<Text style={styles.item}>No hay pagos ni ajustes.</Text>}
@@ -119,13 +151,16 @@ function createStyles(theme: 'light' | 'dark') {
     title: {
       fontSize: 26,
       fontWeight: 'bold',
-      marginBottom: 10,
+      marginBottom: 4,
       color: isDark ? '#fff' : '#000',
     },
     subtitle: {
       fontSize: 18,
-      marginBottom: 16,
-      color: isDark ? '#ccc' : '#333',
+      marginBottom: 12,
+    },
+    subinfo: {
+      fontSize: 15,
+      color: isDark ? '#bbb' : '#666',
     },
     section: {
       fontSize: 20,

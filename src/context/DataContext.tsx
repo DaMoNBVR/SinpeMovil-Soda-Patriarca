@@ -22,6 +22,7 @@ interface DataContextType {
   deletePerson: (id: string) => void;
   toggleFavorite: (personId: string) => void;
   updatePrepaidAmount: (id: string, amount: number) => void;
+  editPerson: (updatedPerson: Person) => void;
 }
 
 export const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -59,6 +60,10 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const addPerson = async (person: Person) => {
     await setDoc(doc(db, 'persons', person.id), person);
   };
+
+  const editPerson = async (updatedPerson: Person) => {
+  await setDoc(doc(db, 'persons', updatedPerson.id), updatedPerson);
+};
 
   const addPurchase = async (purchase: Purchase) => {
     await addDoc(collection(db, 'purchases'), purchase);
@@ -122,6 +127,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         deletePerson,
         toggleFavorite,
         updatePrepaidAmount,
+        editPerson,
       }}
     >
       {children}
