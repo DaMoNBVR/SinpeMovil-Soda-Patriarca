@@ -4,6 +4,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { DataContext } from '../context/DataContext';
 import { getSummaryByPerson } from '../utils/summaryHelpers';
 import { useTheme } from '../context/ThemeContext';
+import { generatePDFReport } from '../utils/pdfGenerator';
 
 const formatDate = (date: Date) =>
   date.toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -43,6 +44,34 @@ export default function DailySummaryScreen() {
     if (date) setSelectedDate(date);
   };
 
+  const handleExportPDF = () => {
+    const title = `Resumen Diario – ${formatDate(selectedDate)}`;
+
+    const compras = purchaseSummary.length
+      ? purchaseSummary.map(item => `<div class="item">${item.name}: ₡${item.total.toFixed(2)}</div>`).join('')
+      : '<div>No hay compras este día.</div>';
+
+    const pagos = paymentSummary.length
+      ? paymentSummary.map(item => `<div class="item">${item.name}: ₡${item.total.toFixed(2)}</div>`).join('')
+      : '<div>No hay pagos este día.</div>';
+
+    const balances = balanceSummary.length
+      ? balanceSummary.map(item =>
+          `<div class="item" style="color:${item.balance < 0 ? 'red' : 'green'};">
+            ${item.name}: ${item.balance < 0 ? 'Deuda' : 'Saldo'} ₡${Math.abs(item.balance).toFixed(2)}
+          </div>`
+        ).join('')
+      : '<div>No hay movimientos que generen balance.</div>';
+
+    const content = `
+      <h2>Compras del día</h2>${compras}
+      <h2>Pagos del día</h2>${pagos}
+      <h2>Balance diario</h2>${balances}
+    `;
+
+    generatePDFReport(title, content);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#121212' : '#fff' }]}>
       <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>Resumen Diario</Text>
@@ -59,6 +88,10 @@ export default function DailySummaryScreen() {
           onChange={handleDateChange}
         />
       )}
+
+      <View style={{ marginVertical: 10 }}>
+        <Button title="Exportar como PDF" onPress={handleExportPDF} />
+      </View>
 
       <Text style={[styles.section, { color: isDark ? '#fff' : '#000' }]}>Compras del día:</Text>
       <FlatList

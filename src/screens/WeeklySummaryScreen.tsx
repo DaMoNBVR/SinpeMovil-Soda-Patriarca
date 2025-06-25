@@ -4,6 +4,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { DataContext } from '../context/DataContext';
 import { getSummaryByPerson } from '../utils/summaryHelpers';
 import { useTheme } from '../context/ThemeContext';
+import { generatePDFReport } from '../utils/pdfGenerator';
 
 const getISOWeek = (date: Date): number => {
   const tmpDate = new Date(date.getTime());
@@ -68,6 +69,22 @@ export default function WeeklySummaryScreen() {
 
   const { start, end } = getWeekRange(selectedDate);
 
+  const handleExportPDF = async () => {
+    const content = `
+      <h2>Semana del ${formatDate(start)} al ${formatDate(end)}</h2>
+      <h3>Compras:</h3>
+      ${purchaseSummary.map((p) => `<div class="item">${p.name}: ₡${p.total.toFixed(2)}</div>`).join('')}
+      <h3>Pagos:</h3>
+      ${paymentSummary.map((p) => `<div class="item">${p.name}: ₡${p.total.toFixed(2)}</div>`).join('')}
+      <h3>Balance semanal:</h3>
+      ${balanceSummary.map((b) => `
+        <div class="item" style="color: ${b.balance < 0 ? 'red' : 'green'}">
+          ${b.name}: ${b.balance < 0 ? 'Deuda' : 'Saldo'} ₡${Math.abs(b.balance).toFixed(2)}
+        </div>`).join('')}
+    `;
+    await generatePDFReport('Resumen Semanal', content);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#121212' : '#fff' }]}>
       <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>Resumen Semanal</Text>
@@ -84,6 +101,9 @@ export default function WeeklySummaryScreen() {
           onChange={handleDateChange}
         />
       )}
+
+      <View style={{ marginVertical: 5 }}></View>
+      <Button title="Exportar PDF" onPress={handleExportPDF} />
 
       <Text style={[styles.section, { color: isDark ? '#fff' : '#000' }]}>Compras de la semana:</Text>
       <FlatList
@@ -114,12 +134,10 @@ export default function WeeklySummaryScreen() {
         data={balanceSummary}
         keyExtractor={(item) => item.personId}
         renderItem={({ item }) => (
-          <Text
-            style={[
-              styles.balanceItem,
-              { color: item.balance < 0 ? 'red' : 'green' }
-            ]}
-          >
+          <Text style={[
+            styles.balanceItem,
+            { color: item.balance < 0 ? 'red' : 'green' }
+          ]}>
             {item.name}: {item.balance < 0 ? 'Deuda' : 'Saldo'} ₡{Math.abs(item.balance).toFixed(2)}
           </Text>
         )}
