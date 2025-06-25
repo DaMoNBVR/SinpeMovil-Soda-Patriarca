@@ -5,6 +5,7 @@ import { DataContext } from '../context/DataContext';
 import { getSummaryByPerson } from '../utils/summaryHelpers';
 import { useTheme } from '../context/ThemeContext';
 import { generatePDFReport } from '../utils/pdfGenerator';
+import { getLocalDateString } from '../utils/dateUtils'; // ✅ Importado
 
 const getISOWeek = (date: Date): number => {
   const tmpDate = new Date(date.getTime());
@@ -51,8 +52,13 @@ export default function WeeklySummaryScreen() {
     if (date) setSelectedDate(date);
   };
 
-  const weekPurchases = purchases.filter((p) => isSameWeek(new Date(p.date), selectedDate));
-  const weekPayments = payments.filter((p) => isSameWeek(new Date(p.date), selectedDate));
+  // ✅ Corrige la conversión de fechas a Date local
+  const weekPurchases = purchases.filter((p) =>
+    isSameWeek(new Date(p.date), selectedDate)
+  );
+  const weekPayments = payments.filter((p) =>
+    isSameWeek(new Date(p.date), selectedDate)
+  );
 
   const purchaseSummary = getSummaryByPerson(weekPurchases, persons);
   const paymentSummary = getSummaryByPerson(weekPayments, persons);

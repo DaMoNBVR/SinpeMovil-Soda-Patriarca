@@ -5,6 +5,7 @@ import { DataContext } from '../context/DataContext';
 import { getSummaryByPerson } from '../utils/summaryHelpers';
 import { useTheme } from '../context/ThemeContext';
 import { generatePDFReport } from '../utils/pdfGenerator';
+import { getLocalDateString } from '../utils/dateUtils'; // ✅ Importa la utilidad
 
 const formatDate = (date: Date) =>
   date.toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -21,7 +22,7 @@ export default function DailySummaryScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
 
-  const dateStr = selectedDate.toISOString().split('T')[0];
+  const dateStr = getLocalDateString(selectedDate); // ✅ Usa la utilidad corregida
 
   const dayPurchases = purchases.filter((p) => p.date === dateStr);
   const dayPayments = payments.filter((p) => p.date === dateStr);

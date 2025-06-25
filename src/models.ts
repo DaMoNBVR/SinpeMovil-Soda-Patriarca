@@ -4,7 +4,9 @@ export interface Person {
   id: string;           // identificador único (puede ser UUID o código)
   name: string;
   prepaidAmount: number;
-  isFavorite?: boolean; // monto pagado por adelantado (en colones)
+  isFavorite?: boolean;
+  guardianName?: string;
+  guardianPhone?: string;
 }
 
 export interface Purchase {

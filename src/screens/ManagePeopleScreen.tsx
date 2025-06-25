@@ -1,18 +1,13 @@
+
 import React, { useContext, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  Button,
-  Alert,
-  StyleSheet,
-  Switch,
-  FlatList,
-  TouchableOpacity,
+  View, Text, TextInput, Button, Alert,
+  StyleSheet, Switch, FlatList, TouchableOpacity
 } from 'react-native';
 import { DataContext } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
 import uuid from 'react-native-uuid';
+import { Person } from '../models';
 
 export default function ManagePeopleScreen() {
   const { theme } = useTheme();
@@ -26,33 +21,56 @@ export default function ManagePeopleScreen() {
 
   const [name, setName] = useState('');
   const [isFavorite, setIsFavorite] = useState(false);
+  const [guardianName, setGuardianName] = useState('');
+  const [guardianPhone, setGuardianPhone] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const handleAdd = () => {
+  const [editMode, setEditMode] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+
+  const handleAddOrUpdate = () => {
     const trimmedName = name.trim();
+    const trimmedGuardianName = guardianName.trim();
+    const trimmedGuardianPhone = guardianPhone.trim();
 
     if (!trimmedName) {
       Alert.alert('Error', 'El nombre no puede estar vacío');
       return;
     }
 
-    const alreadyExists = persons.some(
-      (p) => p.name.toLowerCase() === trimmedName.toLowerCase()
+    const isDuplicate = persons.some(
+      (p) =>
+        p.name.toLowerCase() === trimmedName.toLowerCase() &&
+        (!editMode || p.id !== selectedPerson?.id)
     );
-    if (alreadyExists) {
+
+    if (isDuplicate) {
       Alert.alert('Error', 'Ya existe una persona con ese nombre');
       return;
     }
 
-    addPerson({
-      id: uuid.v4() as string,
+    const person: Person = {
+      id: editMode && selectedPerson ? selectedPerson.id : uuid.v4() as string,
       name: trimmedName,
       isFavorite,
-      prepaidAmount: 0,
-    });
+      prepaidAmount: editMode && selectedPerson ? selectedPerson.prepaidAmount : 0,
+      guardianName: trimmedGuardianName || '',
+      guardianPhone: trimmedGuardianPhone || '',
+    };
 
-    Alert.alert('Éxito', 'Persona agregada');
+    addPerson(person);
+
+    Alert.alert('Éxito', editMode ? 'Persona actualizada' : 'Persona agregada');
+    resetForm();
+  };
+
+  const resetForm = () => {
     setName('');
     setIsFavorite(false);
+    setGuardianName('');
+    setGuardianPhone('');
+    setEditMode(false);
+    setSelectedPerson(null);
   };
 
   const confirmDelete = (personId: string, personName: string) => {
@@ -70,6 +88,37 @@ export default function ManagePeopleScreen() {
     );
   };
 
+  const startEdit = (person: Person) => {
+    setSelectedPerson(person);
+    setName(person.name);
+    setIsFavorite(person.isFavorite ?? false);
+    setGuardianName(person.guardianName || '');
+    setGuardianPhone(person.guardianPhone || '');
+    setEditMode(true);
+  };
+
+  const filteredPersons = persons
+    .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const renderPersonItem = ({ item }: { item: Person }) => (
+    <View style={styles.personRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.personName}>
+          {item.name} {item.isFavorite ? '⭐' : ''}
+        </Text>
+        {item.guardianName ? <Text style={styles.guardianText}>Encargado: {item.guardianName}</Text> : null}
+        {item.guardianPhone ? <Text style={styles.guardianText}>Tel: {item.guardianPhone}</Text> : null}
+      </View>
+      <TouchableOpacity onPress={() => startEdit(item)}>
+        <Text style={{ fontSize: 16, color: 'blue', marginRight: 12 }}>✏️</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => confirmDelete(item.id, item.name)}>
+        <Text style={{ fontSize: 16, color: 'red' }}>🗑️</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Gestión de Personas</Text>
@@ -83,84 +132,70 @@ export default function ManagePeopleScreen() {
         onChangeText={setName}
       />
 
+      <Text style={styles.label}>Encargado legal (opcional):</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ej. Madre de Juan"
+        placeholderTextColor={isDark ? '#aaa' : '#666'}
+        value={guardianName}
+        onChangeText={setGuardianName}
+      />
+
+      <Text style={styles.label}>Tel. encargado legal (opcional):</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ej. 8888-9999"
+        keyboardType="phone-pad"
+        placeholderTextColor={isDark ? '#aaa' : '#666'}
+        value={guardianPhone}
+        onChangeText={setGuardianPhone}
+      />
+
       <View style={styles.switchRow}>
         <Text style={styles.label}>Marcar como favorita</Text>
         <Switch value={isFavorite} onValueChange={setIsFavorite} />
       </View>
 
-      <Button title="Agregar persona" onPress={handleAdd} />
+      <Button title={editMode ? 'Actualizar persona' : 'Agregar persona'} onPress={handleAddOrUpdate} />
+      <View style={{ marginVertical: 5 }} />
+      {editMode && <Button title="Cancelar edición" color="gray" onPress={resetForm} />}
 
-      <Text style={styles.subtitle}>Personas registradas:</Text>
+      <Text style={styles.subtitle}>Buscar persona:</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Buscar por nombre"
+        value={searchTerm}
+        onChangeText={setSearchTerm}
+        placeholderTextColor={isDark ? '#aaa' : '#666'}
+      />
+
       <FlatList
-        data={persons.sort((a, b) => a.name.localeCompare(b.name))}
+        data={filteredPersons}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.personRow}>
-            <Text style={styles.personName}>
-              {item.name} {item.isFavorite ? '⭐' : ''}
-            </Text>
-            <TouchableOpacity onPress={() => confirmDelete(item.id, item.name)}>
-              <Text style={styles.deleteText}>🗑️</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        renderItem={renderPersonItem}
       />
     </View>
   );
 }
 
-const getStyles = (isDark: boolean) =>
-  StyleSheet.create({
-    container: {
-      flex: 1,
-      padding: 20,
-      backgroundColor: isDark ? '#121212' : '#fff',
-    },
-    title: {
-      fontSize: 24,
-      fontWeight: 'bold',
-      marginBottom: 20,
-      color: isDark ? '#fff' : '#000',
-    },
-    label: {
-      fontSize: 16,
-      marginBottom: 6,
-      color: isDark ? '#fff' : '#000',
-    },
-    input: {
-      borderWidth: 1,
-      borderColor: isDark ? '#555' : '#aaa',
-      borderRadius: 4,
-      padding: 10,
-      marginBottom: 16,
-      color: isDark ? '#fff' : '#000',
-    },
-    switchRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 20,
-    },
-    subtitle: {
-      fontSize: 18,
-      fontWeight: '600',
-      marginVertical: 16,
-      color: isDark ? '#fff' : '#000',
-    },
-    personRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderColor: isDark ? '#444' : '#ddd',
-    },
-    personName: {
-      fontSize: 16,
-      color: isDark ? '#fff' : '#000',
-    },
-    deleteText: {
-      color: 'red',
-      fontSize: 18,
-    },
-  });
+const getStyles = (isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, padding: 20, backgroundColor: isDark ? '#121212' : '#fff' },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: isDark ? '#fff' : '#000' },
+  label: { fontSize: 16, marginBottom: 6, color: isDark ? '#fff' : '#000' },
+  input: {
+    borderWidth: 1, borderColor: isDark ? '#555' : '#aaa', borderRadius: 4,
+    padding: 10, marginBottom: 12, color: isDark ? '#fff' : '#000'
+  },
+  switchRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 16,
+  },
+  subtitle: { fontSize: 18, fontWeight: '600', marginVertical: 8, color: isDark ? '#fff' : '#000' },
+  personRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderBottomWidth: 1, paddingVertical: 10,
+    borderColor: isDark ? '#444' : '#ddd',
+  },
+  personName: { fontSize: 16, color: isDark ? '#fff' : '#000' },
+  guardianText: { fontSize: 14, color: isDark ? '#ccc' : '#555' },
+});
