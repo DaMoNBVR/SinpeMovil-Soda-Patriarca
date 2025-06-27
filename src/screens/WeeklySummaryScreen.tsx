@@ -5,7 +5,7 @@ import { DataContext } from '../context/DataContext';
 import { getSummaryByPerson } from '../utils/summaryHelpers';
 import { useTheme } from '../context/ThemeContext';
 import { generatePDFReport } from '../utils/pdfGenerator';
-import { getLocalDateString } from '../utils/dateUtils'; // ✅ Importado
+import { getLocalDate } from '../utils/dateUtils'; // ✅ Corrección importante
 
 const getISOWeek = (date: Date): number => {
   const tmpDate = new Date(date.getTime());
@@ -52,12 +52,12 @@ export default function WeeklySummaryScreen() {
     if (date) setSelectedDate(date);
   };
 
-  // ✅ Corrige la conversión de fechas a Date local
+  // ✅ Corrige desfase de zona horaria en las fechas
   const weekPurchases = purchases.filter((p) =>
-    isSameWeek(new Date(p.date), selectedDate)
+    isSameWeek(getLocalDate(p.date), selectedDate)
   );
   const weekPayments = payments.filter((p) =>
-    isSameWeek(new Date(p.date), selectedDate)
+    isSameWeek(getLocalDate(p.date), selectedDate)
   );
 
   const purchaseSummary = getSummaryByPerson(weekPurchases, persons);
