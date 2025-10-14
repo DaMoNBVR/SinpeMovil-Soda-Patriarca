@@ -122,7 +122,7 @@ for (const event of sortedEvents) {
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Confirmar',
-        onPress: () => {
+        onPress: async () => {
           const deuda = selectedWeekKey === 'general' ? -saldoSemana : -saldoSemana - pagosPosteriores;
           const newPayment: Payment = {
             id: uuid.v4() as string,
@@ -131,9 +131,14 @@ for (const event of sortedEvents) {
             date: todayStr,
             type: 'debtPayment',
           };
-          addPayment(newPayment);
-          updatePrepaidAmount(person.id, deuda);
-          Alert.alert('Éxito', 'La deuda ha sido pagada');
+          try {
+            await addPayment(newPayment);
+            await updatePrepaidAmount(person.id, deuda);
+            Alert.alert('Éxito', 'La deuda ha sido pagada');
+          } catch (error) {
+            console.error('Error al registrar pago de deuda:', error);
+            Alert.alert('Error', 'No se pudo registrar el pago.');
+          }
         },
       },
     ]);

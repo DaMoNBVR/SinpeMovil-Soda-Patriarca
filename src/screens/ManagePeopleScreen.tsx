@@ -28,7 +28,7 @@ export default function ManagePeopleScreen() {
   const [editMode, setEditMode] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
 
-  const handleAddOrUpdate = () => {
+  const handleAddOrUpdate = async () => {
     const trimmedName = name.trim();
     const trimmedGuardianName = guardianName.trim();
     const trimmedGuardianPhone = guardianPhone.trim();
@@ -58,10 +58,14 @@ export default function ManagePeopleScreen() {
       guardianPhone: trimmedGuardianPhone || '',
     };
 
-    addPerson(person);
-
-    Alert.alert('Éxito', editMode ? 'Persona actualizada' : 'Persona agregada');
-    resetForm();
+    try {
+      await addPerson(person);
+      Alert.alert('Éxito', editMode ? 'Persona actualizada' : 'Persona agregada');
+      resetForm();
+    } catch (error) {
+      console.error('Error al guardar persona:', error);
+      Alert.alert('Error', 'No se pudo guardar la persona. Inténtalo de nuevo.');
+    }
   };
 
   const resetForm = () => {
@@ -82,7 +86,15 @@ export default function ManagePeopleScreen() {
         {
           text: 'Eliminar',
           style: 'destructive',
-          onPress: () => deletePerson(personId),
+          onPress: async () => {
+            try {
+              await deletePerson(personId);
+              Alert.alert('Éxito', `${personName} fue eliminada.`);
+            } catch (error) {
+              console.error('Error al eliminar persona:', error);
+              Alert.alert('Error', 'No se pudo eliminar a la persona.');
+            }
+          },
         },
       ]
     );

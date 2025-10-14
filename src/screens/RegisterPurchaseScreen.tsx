@@ -41,7 +41,7 @@ export default function RegisterPurchaseScreen() {
       return a.name.localeCompare(b.name);
     });
 
-  const handleRegisterPurchase = () => {
+  const handleRegisterPurchase = async () => {
     if (!selectedPersonId) {
       Alert.alert('Error', 'Selecciona una persona');
       return;
@@ -61,13 +61,18 @@ export default function RegisterPurchaseScreen() {
       description: description.trim(),
     };
 
-    addPurchase(newPurchase);
-    Alert.alert('Éxito', 'Compra registrada');
-    setAmount('');
-    setDescription('');
-    setSelectedPersonId('');
-    setSearch('');
-    setInputFocused(false);
+    try {
+      await addPurchase(newPurchase);
+      Alert.alert('Éxito', 'Compra registrada');
+      setAmount('');
+      setDescription('');
+      setSelectedPersonId('');
+      setSearch('');
+      setInputFocused(false);
+    } catch (error) {
+      console.error('Error al registrar compra:', error);
+      Alert.alert('Error', 'No se pudo registrar la compra. Inténtalo de nuevo.');
+    }
   };
 
   return (
