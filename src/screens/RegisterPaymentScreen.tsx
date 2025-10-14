@@ -50,7 +50,7 @@ export default function RegisterPaymentScreen() {
     return totalPayments - totalPurchases;
   })();
 
-  const handleRegisterPayment = () => {
+  const handleRegisterPayment = async () => {
     if (!selectedPersonId) {
       Alert.alert('Error', 'Selecciona una persona');
       return;
@@ -70,12 +70,17 @@ export default function RegisterPaymentScreen() {
       type: paymentType,
     };
 
-    addPayment(newPayment);
-    Alert.alert('Éxito', 'Pago registrado');
-    setAmount('');
-    setSelectedPersonId('');
-    setSearch('');
-    setInputFocused(false);
+    try {
+      await addPayment(newPayment);
+      Alert.alert('Éxito', 'Pago registrado');
+      setAmount('');
+      setSelectedPersonId('');
+      setSearch('');
+      setInputFocused(false);
+    } catch (error) {
+      console.error('Error al registrar pago:', error);
+      Alert.alert('Error', 'No se pudo registrar el pago. Inténtalo de nuevo.');
+    }
   };
 
   return (

@@ -1,28 +1,32 @@
-import React, { createContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { Alert } from 'react-native';
 import { Person, Purchase, Payment } from '../models';
 import { db } from '../firebaseConfig';
 import {
   collection,
-  addDoc,
-  onSnapshot,
   doc,
   updateDoc,
   setDoc,
-  deleteDoc,
-  getDocs
+  getDocs,
+  query,
+  where,
+  writeBatch,
 } from 'firebase/firestore';
+import { useAuth } from './AuthContext';
 
 interface DataContextType {
   persons: Person[];
   purchases: Purchase[];
   payments: Payment[];
-  addPurchase: (purchase: Purchase) => void;
-  addPayment: (payment: Payment) => void;
-  addPerson: (person: Person) => void;
-  deletePerson: (id: string) => void;
-  toggleFavorite: (personId: string) => void;
-  updatePrepaidAmount: (id: string, amount: number) => void;
-  editPerson: (updatedPerson: Person) => void;
+  loading: boolean;
+  refreshData: () => Promise<void>;
+  addPurchase: (purchase: Purchase) => Promise<void>;
+  addPayment: (payment: Payment) => Promise<void>;
+  addPerson: (person: Person) => Promise<void>;
+  deletePerson: (id: string) => Promise<void>;
+  toggleFavorite: (personId: string) => Promise<void>;
+  updatePrepaidAmount: (id: string, amount: number) => Promise<void>;
+  editPerson: (updatedPerson: Person) => Promise<void>;
 }
 
 export const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -31,87 +35,215 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const [persons, setPersons] = useState<Person[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // === Sincronización en tiempo real ===
+  const { username } = useAuth();
+
+  const fetchCollections = useCallback(async () => {
+    if (!username) return null;
+
+    const [personsSnap, purchasesSnap, paymentsSnap] = await Promise.all([
+      getDocs(collection(db, 'persons')),
+      getDocs(collection(db, 'purchases')),
+      getDocs(collection(db, 'payments')),
+    ]);
+
+    const personsData = personsSnap.docs.map((docSnap) => {
+      const data = docSnap.data() as Person;
+      return { ...data, id: data.id ?? docSnap.id };
+    });
+
+    const purchasesData = purchasesSnap.docs.map((docSnap) => {
+      const data = docSnap.data() as Purchase;
+      return { ...data, id: data.id ?? docSnap.id };
+    });
+
+    const paymentsData = paymentsSnap.docs.map((docSnap) => {
+      const data = docSnap.data() as Payment;
+      return { ...data, id: data.id ?? docSnap.id };
+    });
+
+    return { personsData, purchasesData, paymentsData };
+  }, [username]);
+
+  const refreshData = useCallback(async () => {
+    try {
+      const data = await fetchCollections();
+      if (!data) {
+        setPersons([]);
+        setPurchases([]);
+        setPayments([]);
+        return;
+      }
+
+      setPersons(data.personsData);
+      setPurchases(data.purchasesData);
+      setPayments(data.paymentsData);
+    } catch (error) {
+      console.error('Error al refrescar datos desde Firebase:', error);
+      Alert.alert('Error', 'No se pudieron obtener los datos más recientes.');
+    }
+  }, [fetchCollections]);
+
   useEffect(() => {
-    const unsubPersons = onSnapshot(collection(db, 'persons'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Person[];
-      setPersons(data);
-    });
+    let active = true;
 
-    const unsubPurchases = onSnapshot(collection(db, 'purchases'), (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data()) as Purchase[];
-      setPurchases(data);
-    });
+    const loadInitialData = async () => {
+      if (!username) {
+        setPersons([]);
+        setPurchases([]);
+        setPayments([]);
+        setLoading(false);
+        return;
+      }
 
-    const unsubPayments = onSnapshot(collection(db, 'payments'), (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data()) as Payment[];
-      setPayments(data);
-    });
+      setLoading(true);
+
+      try {
+        const data = await fetchCollections();
+        if (!active || !data) return;
+        setPersons(data.personsData);
+        setPurchases(data.purchasesData);
+        setPayments(data.paymentsData);
+      } catch (error) {
+        console.error('Error al cargar datos desde Firebase:', error);
+        if (active) {
+          Alert.alert('Error', 'No se pudieron cargar los datos.');
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadInitialData();
 
     return () => {
-      unsubPersons();
-      unsubPurchases();
-      unsubPayments();
+      active = false;
     };
-  }, []);
+  }, [username, fetchCollections]);
 
   // === Agregar elementos ===
   const addPerson = async (person: Person) => {
-    await setDoc(doc(db, 'persons', person.id), person);
+    try {
+      await setDoc(doc(db, 'persons', person.id), person);
+      setPersons((prev) => {
+        const others = prev.filter((p) => p.id !== person.id);
+        return [...others, person];
+      });
+    } catch (error) {
+      console.error('Error al agregar persona:', error);
+      Alert.alert('Error', 'No se pudo agregar la persona.');
+      throw error;
+    }
   };
 
   const editPerson = async (updatedPerson: Person) => {
-  await setDoc(doc(db, 'persons', updatedPerson.id), updatedPerson);
-};
+    try {
+      await setDoc(doc(db, 'persons', updatedPerson.id), updatedPerson);
+      setPersons((prev) =>
+        prev.map((person) => (person.id === updatedPerson.id ? updatedPerson : person))
+      );
+    } catch (error) {
+      console.error('Error al editar persona:', error);
+      Alert.alert('Error', 'No se pudo actualizar la persona.');
+      throw error;
+    }
+  };
 
   const addPurchase = async (purchase: Purchase) => {
-    await addDoc(collection(db, 'purchases'), purchase);
+    try {
+      await setDoc(doc(db, 'purchases', purchase.id), purchase);
+      setPurchases((prev) => {
+        const others = prev.filter((p) => p.id !== purchase.id);
+        return [...others, purchase];
+      });
+    } catch (error) {
+      console.error('Error al agregar compra:', error);
+      Alert.alert('Error', 'No se pudo registrar la compra.');
+      throw error;
+    }
   };
 
   const addPayment = async (payment: Payment) => {
-    await addDoc(collection(db, 'payments'), payment);
+    try {
+      await setDoc(doc(db, 'payments', payment.id), payment);
+      setPayments((prev) => {
+        const others = prev.filter((p) => p.id !== payment.id);
+        return [...others, payment];
+      });
 
-    if (payment.type === 'prepaid') {
-      updatePrepaidAmount(payment.personId, payment.amount);
+      if (payment.type === 'prepaid') {
+        await updatePrepaidAmount(payment.personId, payment.amount);
+      }
+    } catch (error) {
+      console.error('Error al agregar pago:', error);
+      Alert.alert('Error', 'No se pudo registrar el pago.');
+      throw error;
     }
   };
 
   const toggleFavorite = async (personId: string) => {
-    const person = persons.find(p => p.id === personId);
-    if (person) {
+    try {
+      const person = persons.find((p) => p.id === personId);
+      if (!person) return;
+
+      const updatedValue = !(person.isFavorite ?? false);
       await updateDoc(doc(db, 'persons', personId), {
-        isFavorite: !person.isFavorite,
+        isFavorite: updatedValue,
       });
+
+      setPersons((prev) =>
+        prev.map((p) => (p.id === personId ? { ...p, isFavorite: updatedValue } : p))
+      );
+    } catch (error) {
+      console.error('Error al cambiar favorito:', error);
+      Alert.alert('Error', 'No se pudo actualizar el estado de favorito.');
+      throw error;
     }
   };
 
   const updatePrepaidAmount = async (id: string, amount: number) => {
-    const person = persons.find(p => p.id === id);
-    if (person) {
+    try {
+      const person = persons.find((p) => p.id === id);
+      if (!person) return;
+
       const newAmount = (person.prepaidAmount || 0) + amount;
       await updateDoc(doc(db, 'persons', id), {
         prepaidAmount: newAmount,
       });
+
+      setPersons((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, prepaidAmount: newAmount } : p))
+      );
+    } catch (error) {
+      console.error('Error al actualizar el prepago:', error);
+      Alert.alert('Error', 'No se pudo actualizar el saldo de prepago.');
+      throw error;
     }
   };
 
   const deletePerson = async (id: string) => {
-    // Eliminar la persona
-    await deleteDoc(doc(db, 'persons', id));
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'persons', id));
 
-    // Eliminar compras relacionadas
-    const purchaseSnap = await getDocs(collection(db, 'purchases'));
-    const toDeletePurchases = purchaseSnap.docs.filter(doc => doc.data().personId === id);
-    for (const p of toDeletePurchases) {
-      await deleteDoc(doc(db, 'purchases', p.id));
-    }
+      const purchasesQuery = query(collection(db, 'purchases'), where('personId', '==', id));
+      const purchaseSnap = await getDocs(purchasesQuery);
+      purchaseSnap.forEach((docSnap) => batch.delete(doc(db, 'purchases', docSnap.id)));
 
-    // Eliminar pagos relacionados
-    const paymentSnap = await getDocs(collection(db, 'payments'));
-    const toDeletePayments = paymentSnap.docs.filter(doc => doc.data().personId === id);
-    for (const p of toDeletePayments) {
-      await deleteDoc(doc(db, 'payments', p.id));
+      const paymentsQuery = query(collection(db, 'payments'), where('personId', '==', id));
+      const paymentSnap = await getDocs(paymentsQuery);
+      paymentSnap.forEach((docSnap) => batch.delete(doc(db, 'payments', docSnap.id)));
+
+      await batch.commit();
+
+      setPersons((prev) => prev.filter((person) => person.id !== id));
+      setPurchases((prev) => prev.filter((purchase) => purchase.personId !== id));
+      setPayments((prev) => prev.filter((payment) => payment.personId !== id));
+    } catch (error) {
+      console.error('Error al eliminar persona:', error);
+      Alert.alert('Error', 'No se pudo eliminar la persona.');
+      throw error;
     }
   };
 
@@ -121,6 +253,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         persons,
         purchases,
         payments,
+        loading,
+        refreshData,
         addPurchase,
         addPayment,
         addPerson,

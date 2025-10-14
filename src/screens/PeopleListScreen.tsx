@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   TextInput,
+  Alert,
 } from 'react-native';
 import { DataContext } from '../context/DataContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,7 +59,16 @@ export default function PeopleListScreen() {
             >
               <Text style={styles.name}>{item.name}</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => toggleFavorite(item.id)}>
+            <TouchableOpacity
+              onPress={async () => {
+                try {
+                  await toggleFavorite(item.id);
+                } catch (error) {
+                  console.error('Error al cambiar favorito:', error);
+                  Alert.alert('Error', 'No se pudo actualizar el estado de favorito.');
+                }
+              }}
+            >
               <Ionicons
                 name={item.isFavorite ? 'star' : 'star-outline'}
                 size={24}

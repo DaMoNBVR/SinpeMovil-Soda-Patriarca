@@ -53,7 +53,7 @@ export default function ManualAdjustmentScreen() {
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Aceptar',
-          onPress: () => {
+          onPress: async () => {
             const newPayment: Payment = {
               id: uuid.v4() as string,
               personId: selectedPersonId,
@@ -62,13 +62,18 @@ export default function ManualAdjustmentScreen() {
               type: 'manualAdjustment',
               comment,
             };
-            addPayment(newPayment);
-            updatePrepaidAmount(selectedPersonId, parsedAmount);
-            setSearch('');
-            setSelectedPersonId('');
-            setAmount('');
-            setComment('');
-            Alert.alert('Éxito', 'Ajuste aplicado');
+            try {
+              await addPayment(newPayment);
+              await updatePrepaidAmount(selectedPersonId, parsedAmount);
+              setSearch('');
+              setSelectedPersonId('');
+              setAmount('');
+              setComment('');
+              Alert.alert('Éxito', 'Ajuste aplicado');
+            } catch (error) {
+              console.error('Error al aplicar ajuste manual:', error);
+              Alert.alert('Error', 'No se pudo aplicar el ajuste.');
+            }
           },
         },
       ]
