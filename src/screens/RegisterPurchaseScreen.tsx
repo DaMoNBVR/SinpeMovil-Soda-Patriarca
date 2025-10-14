@@ -1,4 +1,5 @@
 import React, { useContext, useState } from 'react';
+import { commonStyles } from '../Styles/commonStyles';
 import {
   View,
   Text,
@@ -13,6 +14,7 @@ import { DataContext } from '../context/DataContext';
 import { Purchase } from '../models';
 import uuid from 'react-native-uuid';
 import { useTheme } from '../context/ThemeContext';
+import { getLocalDateString } from '../utils/dateUtils';
 
 export default function RegisterPurchaseScreen() {
   const { theme } = useTheme();
@@ -55,7 +57,7 @@ export default function RegisterPurchaseScreen() {
       id: uuid.v4() as string,
       personId: selectedPersonId,
       amount: parsedAmount,
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateString(new Date()),
       description: description.trim(),
     };
 
@@ -70,7 +72,7 @@ export default function RegisterPurchaseScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Buscar persona:</Text>
+      <Text style={[styles.label, { fontSize: 18 }]}>Buscar persona:</Text>
 
       {selectedPerson ? (
         <View style={styles.selectedRow}>
@@ -89,7 +91,7 @@ export default function RegisterPurchaseScreen() {
       ) : (
         <>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { fontSize: 18 }]}
             placeholder="Nombre o inicial"
             placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
             value={search}
@@ -111,7 +113,7 @@ export default function RegisterPurchaseScreen() {
                     setSearch('');
                   }}
                 >
-                  <Text style={styles.itemText}>
+                  <Text style={[commonStyles.itemText, { color: theme === 'dark' ? '#fff' : '#000' }]}>
                     {item.name} {item.isFavorite ? '⭐' : ''}
                   </Text>
                 </TouchableOpacity>
@@ -121,9 +123,9 @@ export default function RegisterPurchaseScreen() {
         </>
       )}
 
-      <Text style={styles.label}>Monto:</Text>
+      <Text style={[styles.label, { fontSize: 18 }]}>Monto:</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="Monto en colones"
         placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
         keyboardType="numeric"
@@ -131,9 +133,9 @@ export default function RegisterPurchaseScreen() {
         onChangeText={setAmount}
       />
 
-      <Text style={styles.label}>Descripción (opcional):</Text>
+      <Text style={[styles.label, { fontSize: 18 }]}>Descripción (opcional):</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="Descripción"
         placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
         value={description}
@@ -180,7 +182,7 @@ const getStyles = (theme: 'light' | 'dark') =>
       fontWeight: 'bold',
     },
     item: {
-      paddingVertical: 8,
+      paddingVertical: 5,
       paddingHorizontal: 10,
       borderBottomWidth: 1,
       borderColor: theme === 'dark' ? '#444' : '#ddd',

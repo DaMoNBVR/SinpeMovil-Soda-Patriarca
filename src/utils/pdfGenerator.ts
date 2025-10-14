@@ -2,6 +2,16 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Person, Purchase, Payment } from '../models';
 
+function formatWeekRange(startDate: Date): string {
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + 6);
+  const meses = [
+    'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+  ];
+  return `Semana del ${startDate.getDate()} de ${meses[startDate.getMonth()]} al ${endDate.getDate()} de ${meses[endDate.getMonth()]}`;
+}
+
 export async function generatePDFReport(title: string, content: string) {
   const html = `
     <html>
@@ -28,15 +38,12 @@ export async function generatePDFReport(title: string, content: string) {
 export async function sharePDFForPerson(
   person: Person,
   purchases: Purchase[],
-  payments: Payment[]
+  payments: Payment[],
+  selectedWeekStartDate?: Date
 ) {
-  const title = `Historial de ${person.name}`;
-  const sortedPurchases = purchases
-    .filter(p => p.personId === person.id)
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const sortedPayments = payments
-    .filter(p => p.personId === person.id)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const title = selectedWeekStartDate
+    ? `Historial de ${person.name} - ${formatWeekRange(selectedWeekStartDate)}`
+    : `Historial de ${person.name}`;
 
   const formatType = (type: Payment['type']) => {
     switch (type) {
@@ -50,6 +57,14 @@ export async function sharePDFForPerson(
         return 'Otro';
     }
   };
+
+  const sortedPurchases = purchases
+    .filter(p => p.personId === person.id)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const sortedPayments = payments
+    .filter(p => p.personId === person.id)
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   const purchasesHTML = sortedPurchases.length
     ? sortedPurchases

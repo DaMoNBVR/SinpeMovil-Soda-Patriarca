@@ -6,6 +6,7 @@ import { getSummaryByPerson } from '../utils/summaryHelpers';
 import { useTheme } from '../context/ThemeContext';
 import { generatePDFReport } from '../utils/pdfGenerator';
 import { getLocalDateString } from '../utils/dateUtils'; // ✅ Importa la utilidad
+import { commonStyles } from '../Styles/commonStyles';
 
 const formatDate = (date: Date) =>
   date.toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -48,26 +49,30 @@ export default function DailySummaryScreen() {
   const handleExportPDF = () => {
     const title = `Resumen Diario – ${formatDate(selectedDate)}`;
 
-    const compras = purchaseSummary.length
-      ? purchaseSummary.map(item => `<div class="item">${item.name}: ₡${item.total.toFixed(2)}</div>`).join('')
-      : '<div>No hay compras este día.</div>';
-
-    const pagos = paymentSummary.length
-      ? paymentSummary.map(item => `<div class="item">${item.name}: ₡${item.total.toFixed(2)}</div>`).join('')
-      : '<div>No hay pagos este día.</div>';
-
-    const balances = balanceSummary.length
-      ? balanceSummary.map(item =>
-          `<div class="item" style="color:${item.balance < 0 ? 'red' : 'green'};">
-            ${item.name}: ${item.balance < 0 ? 'Deuda' : 'Saldo'} ₡${Math.abs(item.balance).toFixed(2)}
-          </div>`
+    const comprasRows = purchaseSummary.length
+      ? purchaseSummary.map(item =>
+          `<div class="item">${item.name}: ₡${item.total.toFixed(2)}</div>`
         ).join('')
-      : '<div>No hay movimientos que generen balance.</div>';
+      : '<div class="item">No hay compras este día.</div>';
+
+    const pagosRows = paymentSummary.length
+      ? paymentSummary.map(item =>
+          `<div class="item">${item.name}: ₡${item.total.toFixed(2)}</div>`
+        ).join('')
+      : '<div class="item">No hay pagos este día.</div>';
+
+    const balanceRows = balanceSummary.length
+      ? balanceSummary.map(item => {
+          const color = item.balance < 0 ? 'red' : 'green';
+          const label = item.balance < 0 ? 'Deuda' : 'Saldo';
+          return `<div class="item" style="color:${color};">${item.name}: ${label} ₡${Math.abs(item.balance).toFixed(2)}</div>`;
+        }).join('')
+      : '<div class="item">No hay movimientos que generen balance.</div>';
 
     const content = `
-      <h2>Compras del día</h2>${compras}
-      <h2>Pagos del día</h2>${pagos}
-      <h2>Balance diario</h2>${balances}
+      <h2>Compras del día</h2>${comprasRows}
+      <h2>Pagos del día</h2>${pagosRows}
+      <h2>Balance diario</h2>${balanceRows}
     `;
 
     generatePDFReport(title, content);
@@ -103,7 +108,7 @@ export default function DailySummaryScreen() {
             {item.name}: ₡{item.total.toFixed(2)}
           </Text>
         )}
-        ListEmptyComponent={<Text style={{ color: isDark ? '#aaa' : '#333' }}>No hay compras este día.</Text>}
+        ListEmptyComponent={<Text style={[commonStyles.itemText, { color: isDark ? '#eee' : '#000' }]}>No hay compras este día.</Text>}
       />
 
       <Text style={[styles.section, { color: isDark ? '#fff' : '#000' }]}>Pagos del día:</Text>
@@ -115,7 +120,7 @@ export default function DailySummaryScreen() {
             {item.name}: ₡{item.total.toFixed(2)}
           </Text>
         )}
-        ListEmptyComponent={<Text style={{ color: isDark ? '#aaa' : '#333' }}>No hay pagos este día.</Text>}
+        ListEmptyComponent={<Text style={[commonStyles.itemText, { color: isDark ? '#eee' : '#000' }]}>No hay pagos este día.</Text>}
       />
 
       <Text style={[styles.section, { color: isDark ? '#fff' : '#000' }]}>Balance diario:</Text>
@@ -135,7 +140,7 @@ export default function DailySummaryScreen() {
           </Text>
         )}
         ListEmptyComponent={
-          <Text style={{ color: isDark ? '#aaa' : '#333' }}>No hay movimientos que generen balance.</Text>
+          <Text style={[commonStyles.itemText, { color: isDark ? '#eee' : '#000' }]}>No hay movimientos que generen balance.</Text>
         }
       />
     </View>
@@ -144,10 +149,10 @@ export default function DailySummaryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 8 },
-  subtitle: { fontSize: 16, marginBottom: 12 },
-  section: { fontSize: 18, fontWeight: '600', marginTop: 20, marginBottom: 6 },
-  item: { fontSize: 16, marginVertical: 4 },
-  paymentItem: { fontSize: 16, marginVertical: 4 },
-  balanceItem: { fontSize: 16, marginVertical: 4 },
+  title: { fontSize: 30, fontWeight: 'bold', marginBottom: 8 },
+  subtitle: { fontSize: 20, marginBottom: 16 },
+  section: { fontSize: 22, fontWeight: '700', marginTop: 20, marginBottom: 6 },
+  item: { fontSize: 18, fontWeight: '600', marginVertical: 8 },
+  paymentItem: { fontSize: 18, fontWeight: 'bold', marginVertical: 8 },
+  balanceItem: { fontSize: 18, fontWeight: 'bold', marginVertical: 8 },
 });

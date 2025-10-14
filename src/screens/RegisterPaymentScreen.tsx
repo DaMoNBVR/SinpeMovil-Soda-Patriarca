@@ -1,4 +1,5 @@
 import React, { useContext, useState } from 'react';
+import { commonStyles } from '../Styles/commonStyles';
 import {
   View,
   Text,
@@ -13,6 +14,7 @@ import { DataContext } from '../context/DataContext';
 import { Payment } from '../models';
 import uuid from 'react-native-uuid';
 import { useTheme } from '../context/ThemeContext';
+import { getLocalDateString } from '../utils/dateUtils';
 
 export default function RegisterPaymentScreen() {
   const { theme } = useTheme();
@@ -27,6 +29,7 @@ export default function RegisterPaymentScreen() {
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [amount, setAmount] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
+  const [paymentType, setPaymentType] = useState<'debtPayment' | 'prepaid'>('debtPayment');
 
   const selectedPerson = persons.find((p) => p.id === selectedPersonId);
 
@@ -63,8 +66,8 @@ export default function RegisterPaymentScreen() {
       id: uuid.v4() as string,
       personId: selectedPersonId,
       amount: parsedAmount,
-      date: new Date().toISOString().split('T')[0],
-      type: currentBalance < 0 ? 'debtPayment' : 'prepaid',
+      date: getLocalDateString(new Date()),
+      type: paymentType,
     };
 
     addPayment(newPayment);
@@ -77,7 +80,7 @@ export default function RegisterPaymentScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Buscar persona:</Text>
+      <Text style={[styles.label, { fontSize: 18 }]}>Buscar persona:</Text>
 
       {selectedPerson ? (
         <View style={styles.selectedRow}>
@@ -96,7 +99,7 @@ export default function RegisterPaymentScreen() {
       ) : (
         <>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { fontSize: 18 }]}
             placeholder="Nombre o inicial"
             placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
             value={search}
@@ -116,9 +119,10 @@ export default function RegisterPaymentScreen() {
                     setSelectedPersonId(item.id);
                     setInputFocused(false);
                     setSearch('');
+                    setPaymentType(currentBalance < 0 ? 'debtPayment' : 'prepaid');
                   }}
                 >
-                  <Text style={styles.itemText}>
+                  <Text style={[commonStyles.itemText, { color: theme === 'dark' ? '#fff' : '#000' }]}>
                     {item.name} {item.isFavorite ? '⭐' : ''}
                   </Text>
                 </TouchableOpacity>
@@ -128,9 +132,43 @@ export default function RegisterPaymentScreen() {
         </>
       )}
 
-      <Text style={styles.label}>Monto del pago:</Text>
+      {selectedPerson && (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+          <TouchableOpacity
+            style={{
+              padding: 10,
+              backgroundColor: paymentType === 'debtPayment' ? '#f05454' : '#ddd',
+              borderRadius: 6,
+              flex: 1,
+              marginRight: 5,
+            }}
+            onPress={() => setPaymentType('debtPayment')}
+          >
+            <Text style={{ color: paymentType === 'debtPayment' ? '#fff' : '#000', textAlign: 'center' }}>
+              💰 Pagar deuda
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{
+              padding: 10,
+              backgroundColor: paymentType === 'prepaid' ? '#4caf50' : '#ddd',
+              borderRadius: 6,
+              flex: 1,
+              marginLeft: 5,
+            }}
+            onPress={() => setPaymentType('prepaid')}
+          >
+            <Text style={{ color: paymentType === 'prepaid' ? '#fff' : '#000', textAlign: 'center' }}>
+              💼 Prepago
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <Text style={[styles.label, { fontSize: 18 }]}>Monto del pago:</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="₡"
         placeholderTextColor={theme === 'dark' ? '#aaa' : undefined}
         keyboardType="numeric"
@@ -139,7 +177,7 @@ export default function RegisterPaymentScreen() {
       />
 
       <Button
-        title={selectedPerson && currentBalance < 0 ? 'Pagar deuda' : 'Registrar pago'}
+        title={selectedPerson && paymentType === 'debtPayment' ? 'Pagar deuda' : 'Registrar pago'}
         onPress={handleRegisterPayment}
       />
     </View>
@@ -181,7 +219,7 @@ const getStyles = (theme: 'light' | 'dark') =>
       fontWeight: 'bold',
     },
     item: {
-      paddingVertical: 8,
+      paddingVertical: 5,
       paddingHorizontal: 10,
       borderBottomWidth: 1,
       borderColor: theme === 'dark' ? '#444' : '#ddd',

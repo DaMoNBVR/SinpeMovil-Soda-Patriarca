@@ -1,18 +1,39 @@
-import React, { useContext } from 'react';
-import { View, Text, FlatList, StyleSheet, Button, Alert, Linking } from 'react-native';
+import React, { useContext, useState } from 'react';
+import { View, Text, StyleSheet, Button, Alert, Linking, ScrollView } from 'react-native';
 import { RouteProp, useRoute } from '@react-navigation/native';
+import { Picker } from '@react-native-picker/picker';
+import uuid from 'react-native-uuid';
+
 import { DataContext } from '../context/DataContext';
 import { RootStackParamList } from '../navigation/StackNavigator';
-import uuid from 'react-native-uuid';
 import { Payment } from '../models';
 import { useTheme } from '../context/ThemeContext';
+import { commonStyles } from '../Styles/commonStyles';
+import { getLocalDate, groupEventsByWeek } from '../utils/dateUtils';
 import { sharePDFForPerson } from '../utils/pdfGenerator';
-import { getLocalDate } from '../utils/dateUtils';
+import { getLocalDateString } from '../utils/dateUtils';
 
-type PersonDetailRouteProp = RouteProp<RootStackParamList, 'PersonDetail'>;
+function getWeekRangeLabel(startDate: Date): string {
+  const endDate = new Date(startDate);
+  endDate.setDate(startDate.getDate() + 6);
+  return `Semana del ${startDate.toLocaleDateString('es-CR')} al ${endDate.toLocaleDateString('es-CR')}`;
+}
+
+function getPaymentDescription(type: string, comment?: string): string {
+  switch (type) {
+    case 'debtPayment':
+      return 'Pago de deuda';
+    case 'manualAdjustment':
+      return `Ajuste manual${comment ? ` (${comment})` : ''}`;
+    case 'prepaid':
+      return 'Pago adelantado';
+    default:
+      return type;
+  }
+}
 
 export default function PersonDetailScreen() {
-  const { params } = useRoute<PersonDetailRouteProp>();
+  const { params } = useRoute<RouteProp<RootStackParamList, 'PersonDetail'>>();
   const { personId } = params;
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -24,48 +45,106 @@ export default function PersonDetailScreen() {
   const person = persons.find((p) => p.id === personId);
   if (!person) return <Text>Persona no encontrada</Text>;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString(new Date());
+  const personPurchases = purchases.filter((p) => p.personId === personId);
+  const personPayments = payments.filter((p) => p.personId === personId);
 
-  const personPurchases = purchases
-    .filter((p) => p.personId === personId)
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const groupedPurchases = groupEventsByWeek(personPurchases);
+  const groupedPayments = groupEventsByWeek(personPayments);
 
-  const personPayments = payments
-    .filter((p) => p.personId === personId)
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const allWeekGroups = Array.from(
+    new Map([...groupedPurchases, ...groupedPayments].map((g) => [g.key, g])).values()
+  ).sort((a, b) => b.startDate.getTime() - a.startDate.getTime());
 
-  const totalPurchases = personPurchases.reduce((sum, p) => sum + p.amount, 0);
-  const totalPayments = personPayments.reduce((sum, p) => sum + p.amount, 0);
-  const saldo = totalPayments - totalPurchases;
+  const [selectedWeekKey, setSelectedWeekKey] = useState<string>('general');
 
-  const traducirTipo = (type: string) => {
-    switch (type) {
-      case 'prepaid': return 'Pago adelantado';
-      case 'debtPayment': return 'Pago de deuda';
-      case 'manualAdjustment': return 'Ajuste manual';
-      default: return 'Otro';
+  const currentWeekPurchases =
+    selectedWeekKey === 'general'
+      ? personPurchases
+      : groupedPurchases.find((g) => g.key === selectedWeekKey)?.events || [];
+
+  const currentWeekPayments =
+    selectedWeekKey === 'general'
+      ? personPayments
+      : groupedPayments.find((g) => g.key === selectedWeekKey)?.events || [];
+
+  const sortedEvents = [...personPurchases, ...personPayments].sort(
+    (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
+  );
+
+  const group = groupedPurchases.find((g) => g.key === selectedWeekKey);
+  const startDate = group?.startDate;
+  const endDate = startDate ? new Date(startDate.getTime() + 6 * 86400000) : undefined;
+
+  let saldoInicial = 0;
+  let saldoSemana = 0;
+  let pagosPosteriores = 0;
+  let deudaSemana = 0;
+  let pagosDesdeSemana = 0;
+
+for (const event of sortedEvents) {
+  const fecha = getLocalDate(event.date);
+  const esPago = (event as Payment).type !== undefined;
+  const monto = esPago ? (event as Payment).amount : -event.amount;
+
+  if (selectedWeekKey === 'general') {
+    saldoSemana += monto;
+  } else {
+    if (startDate && fecha < startDate) {
+      saldoInicial += monto;
+    } else if (startDate && endDate && fecha >= startDate && fecha <= endDate) {
+      saldoSemana += monto;
+      deudaSemana += monto;
+      if (esPago) pagosDesdeSemana += monto; // ✅ pagos de esta semana
+    } else if (startDate && endDate && fecha > endDate && esPago) {
+      pagosDesdeSemana += monto; // ✅ pagos posteriores
     }
-  };
+  }
+}
+
+  const saldoFinal = selectedWeekKey === 'general' ? saldoSemana : saldoInicial + saldoSemana;
+
+  let mostrarBotonPago = false;
+  let mensajeDeudaCubierta = '';
+
+  if (selectedWeekKey === 'general') {
+  mostrarBotonPago = saldoSemana < 0;
+} else if (saldoSemana < 0) {
+  if (pagosDesdeSemana >= -saldoSemana) {
+  mensajeDeudaCubierta = '✅ Esta deuda fue saldada completamente.';
+} else if (pagosDesdeSemana > 0) {
+  mensajeDeudaCubierta = '⚠️ Esta deuda fue pagada parcialmente.';
+}
+}
 
   const handlePayDebt = () => {
-    const debt = -saldo;
-    if (debt <= 0) return;
-
-    const newPayment: Payment = {
-      id: uuid.v4() as string,
-      personId: person.id,
-      amount: debt,
-      date: todayStr,
-      type: 'debtPayment',
-    };
-
-    addPayment(newPayment);
-    updatePrepaidAmount(person.id, debt);
-    Alert.alert('Éxito', 'La deuda ha sido pagada');
+    Alert.alert('Confirmar pago de deuda', '¿Está seguro de que desea registrar este pago?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar',
+        onPress: () => {
+          const deuda = selectedWeekKey === 'general' ? -saldoSemana : -saldoSemana - pagosPosteriores;
+          const newPayment: Payment = {
+            id: uuid.v4() as string,
+            personId: person.id,
+            amount: deuda,
+            date: todayStr,
+            type: 'debtPayment',
+          };
+          addPayment(newPayment);
+          updatePrepaidAmount(person.id, deuda);
+          Alert.alert('Éxito', 'La deuda ha sido pagada');
+        },
+      },
+    ]);
   };
 
   const handleExportPDF = () => {
-    sharePDFForPerson(person, personPurchases, personPayments);
+    const selectedWeekStartDate =
+      selectedWeekKey === 'general'
+        ? undefined
+        : groupedPurchases.find((g) => g.key === selectedWeekKey)?.startDate;
+    sharePDFForPerson(person, currentWeekPurchases, currentWeekPayments, selectedWeekStartDate);
   };
 
   const handleWhatsApp = () => {
@@ -73,106 +152,88 @@ export default function PersonDetailScreen() {
       Alert.alert('No disponible', 'Esta persona no tiene número registrado.');
       return;
     }
+    const normalizedPhone = person.guardianPhone.startsWith('+')
+      ? person.guardianPhone
+      : '+506' + person.guardianPhone.replace(/\D/g, '');
 
     const mensaje = person.guardianName
-      ? `Hola ${person.guardianName},\n\nEste es el resumen actual de ${person.name}:\nSaldo: ${saldo < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldo).toFixed(2)}.\n\nGracias.`
-      : `Hola ${person.name}\n\nEste es tu resumen actual\nSaldo: ${saldo < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldo).toFixed(2)}.\n\nGracias.`;
+      ? `Hola ${person.guardianName},\n\nResumen de ${person.name}:\nSaldo: ${saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldoFinal).toFixed(2)}.`
+      : `Hola ${person.name},\n\nSaldo: ${saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldoFinal).toFixed(2)}.`;
 
-    const url = `https://wa.me/${person.guardianPhone.replace(/\D/g, '')}?text=${encodeURIComponent(mensaje)}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Error', 'No se pudo abrir WhatsApp.');
-    });
+    const url = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(mensaje)}`;
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'No se pudo abrir WhatsApp.'));
   };
 
+      // Ordenar por fecha antes de mostrar
+    const sortedPurchases = [...currentWeekPurchases].sort(
+      (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
+    );
+
+const sortedPayments = [...currentWeekPayments].sort(
+  (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
+);
+
+
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>{person.name}</Text>
+      {person.guardianName && <Text style={styles.subinfo}>Encargado: {person.guardianName}</Text>}
+      {person.guardianPhone && <Text style={styles.subinfo}>📞 {person.guardianPhone}</Text>}
+    
+      <Picker selectedValue={selectedWeekKey} onValueChange={setSelectedWeekKey}>
+        <Picker.Item label="Historial general" value="general" />
+        {allWeekGroups.map((g) => (
+          <Picker.Item  key={g.key} label={getWeekRangeLabel(g.startDate)} value={g.key} />
+        ))}
+      </Picker>
 
-      {person.guardianName && (
-        <Text style={styles.subinfo}>Encargado: {person.guardianName}</Text>
-      )}
-      {person.guardianPhone && (
-        <Text style={styles.subinfo}>📞 {person.guardianPhone}</Text>
-      )}
-
-      <Text style={[styles.subtitle, { color: saldo < 0 ? 'red' : 'green' }]}>
-        {saldo < 0 ? 'Deuda: ' : 'Saldo a favor: '}₡{Math.abs(saldo).toFixed(2)}
-      </Text>
-
-      {saldo < 0 && (
-        <Button title="Pagar deuda" color="#f05454" onPress={handlePayDebt} />
-      )}
-
-      <View style={{ marginVertical: 10 }} />
-      <Button title="Exportar historial en PDF" onPress={handleExportPDF} />
-
-      {person.guardianPhone && (
+      {selectedWeekKey !== 'general' && (
         <>
-          <View style={{ marginVertical: 10 }} />
-          <Button title="Enviar por WhatsApp" color="#25D366" onPress={handleWhatsApp} />
+          <Text style={styles.section}>Saldo inicial de esta semana: ₡{saldoInicial.toFixed(2)}</Text>
+          <Text style={[styles.section, { color: saldoFinal < 0 ? 'red' : 'green' }]}>Saldo final de esta semana: {saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡{Math.abs(saldoFinal).toFixed(2)}</Text>
+        </>
+      )}
+      {selectedWeekKey === 'general' && (
+        <>
+          <Text style={[styles.section, { color: saldoFinal < 0 ? 'red' : 'green' }]}>Saldo final acumulado: {saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡{Math.abs(saldoFinal).toFixed(2)}</Text>
         </>
       )}
 
+      {mensajeDeudaCubierta !== '' && (
+        <Text style={[styles.section, { color: 'orange' }]}>{mensajeDeudaCubierta}</Text>
+      )}
+      {mostrarBotonPago && <Button title="Pagar deuda" color="#f05454" onPress={handlePayDebt} />}
+
+      <View style={{ marginVertical: 10 }} />
+      <Button title="Exportar PDF" onPress={handleExportPDF} />
+      <View style={{ marginVertical: 10 }} />
+      {person.guardianPhone && <Button title="Enviar por WhatsApp" color="#25D366" onPress={handleWhatsApp} />}
+
       <Text style={styles.section}>Compras:</Text>
-      <FlatList
-        data={personPurchases}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <Text style={styles.item}>
-            📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {item.description || 'Sin descripción'}
-          </Text>
-        )}
-        ListEmptyComponent={<Text style={styles.item}>No hay compras registradas.</Text>}
-      />
+        {sortedPurchases.map((item) => (
+      <Text style={styles.item} key={item.id}>
+        📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {item.description || 'Sin descripción'}
+      </Text>
+      ))}
 
       <Text style={styles.section}>Pagos y ajustes:</Text>
-      <FlatList
-        data={personPayments}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <Text style={styles.item}>
-            📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {traducirTipo(item.type)}{item.comment ? ` (${item.comment})` : ''}
-          </Text>
-        )}
-        ListEmptyComponent={<Text style={styles.item}>No hay pagos ni ajustes.</Text>}
-      />
-    </View>
+        {sortedPayments.map((item) => (
+      <Text style={styles.item} key={item.id}>
+        📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {getPaymentDescription(item.type, item.comment)}
+      </Text>
+      ))}
+    </ScrollView>
   );
 }
 
 function createStyles(theme: 'light' | 'dark') {
   const isDark = theme === 'dark';
   return StyleSheet.create({
-    container: {
-      flex: 1,
-      padding: 16,
-      backgroundColor: isDark ? '#111' : '#fff',
-    },
-    title: {
-      fontSize: 26,
-      fontWeight: 'bold',
-      marginBottom: 4,
-      color: isDark ? '#fff' : '#000',
-    },
-    subtitle: {
-      fontSize: 18,
-      marginBottom: 12,
-    },
-    subinfo: {
-      fontSize: 15,
-      color: isDark ? '#bbb' : '#666',
-    },
-    section: {
-      fontSize: 20,
-      fontWeight: '600',
-      marginTop: 20,
-      marginBottom: 8,
-      color: isDark ? '#fff' : '#000',
-    },
-    item: {
-      fontSize: 16,
-      paddingVertical: 4,
-      color: isDark ? '#ddd' : '#000',
-    },
+    container: { padding: 16, backgroundColor: isDark ? '#111' : '#fff' },
+    title: { fontSize: 30, fontWeight: 'bold', marginBottom: 4, color: isDark ? '#fff' : '#000' },
+    subtitle: { fontSize: 22, marginBottom: 12 },
+    subinfo: { fontSize: 18, color: isDark ? '#bbb' : '#666' },
+    section: { fontSize: 20, fontWeight: '600', marginTop: 20, marginBottom: 8, color: isDark ? '#fff' : '#000' },
+    item: { fontSize: 20, fontWeight: '600', paddingVertical: 4, color: isDark ? '#ddd' : '#000' },
   });
 }

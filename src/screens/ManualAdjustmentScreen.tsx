@@ -13,6 +13,8 @@ import { DataContext } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
 import uuid from 'react-native-uuid';
 import { Payment } from '../models';
+import { commonStyles } from '../Styles/commonStyles';
+import { getLocalDateString } from '../utils/dateUtils';
 
 export default function ManualAdjustmentScreen() {
   const { theme } = useTheme();
@@ -56,7 +58,7 @@ export default function ManualAdjustmentScreen() {
               id: uuid.v4() as string,
               personId: selectedPersonId,
               amount: parsedAmount,
-              date: new Date().toISOString().split('T')[0],
+              date: getLocalDateString(new Date()),
               type: 'manualAdjustment',
               comment,
             };
@@ -93,7 +95,7 @@ export default function ManualAdjustmentScreen() {
       ) : (
         <>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { fontSize: 18 }]}
             placeholder="Nombre o inicial"
             placeholderTextColor={isDark ? '#999' : '#666'}
             value={search}
@@ -115,7 +117,7 @@ export default function ManualAdjustmentScreen() {
                     setSearch('');
                   }}
                 >
-                  <Text style={{ color: isDark ? '#eee' : '#000' }}>
+                  <Text style={[commonStyles.listText, { color: isDark ? '#eee' : '#000' }]}>
                     {item.name} {item.isFavorite ? '⭐' : ''}
                   </Text>
                 </TouchableOpacity>
@@ -127,7 +129,7 @@ export default function ManualAdjustmentScreen() {
 
       <Text style={styles.label}>Monto del ajuste (₡):</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         keyboardType="numeric"
         placeholder="Ej: 500 o -500"
         placeholderTextColor={isDark ? '#999' : '#666'}
@@ -137,7 +139,7 @@ export default function ManualAdjustmentScreen() {
 
       <Text style={styles.label}>Comentario:</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="Razón del ajuste"
         placeholderTextColor={isDark ? '#999' : '#666'}
         value={comment}
@@ -156,7 +158,7 @@ function createStyles(isDark: boolean) {
       padding: 20,
       backgroundColor: isDark ? '#111' : '#fff',
     },
-    label: {
+    label: { fontSize: 18,
       marginTop: 10,
       marginBottom: 5,
       color: isDark ? '#eee' : '#000',
@@ -170,7 +172,7 @@ function createStyles(isDark: boolean) {
       color: isDark ? '#fff' : '#000',
     },
     item: {
-      paddingVertical: 8,
+      paddingVertical: 5,
       paddingHorizontal: 10,
       borderBottomWidth: 1,
       borderColor: isDark ? '#444' : '#ddd',
@@ -187,7 +189,7 @@ function createStyles(isDark: boolean) {
     },
     changeBtn: {
       color: '#007bff',
-      fontWeight: 'bold',
+      fontWeight: '600',
     },
   });
 }

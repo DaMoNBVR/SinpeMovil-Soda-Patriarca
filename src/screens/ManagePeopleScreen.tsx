@@ -1,4 +1,3 @@
-
 import React, { useContext, useState } from 'react';
 import {
   View, Text, TextInput, Button, Alert,
@@ -8,6 +7,7 @@ import { DataContext } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
 import uuid from 'react-native-uuid';
 import { Person } from '../models';
+import { commonStyles } from '../Styles/commonStyles';
 
 export default function ManagePeopleScreen() {
   const { theme } = useTheme();
@@ -104,11 +104,11 @@ export default function ManagePeopleScreen() {
   const renderPersonItem = ({ item }: { item: Person }) => (
     <View style={styles.personRow}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.personName}>
+        <Text style={[commonStyles.itemText, { color: isDark ? '#fff' : '#000' }]}>
           {item.name} {item.isFavorite ? '⭐' : ''}
         </Text>
-        {item.guardianName ? <Text style={styles.guardianText}>Encargado: {item.guardianName}</Text> : null}
-        {item.guardianPhone ? <Text style={styles.guardianText}>Tel: {item.guardianPhone}</Text> : null}
+        {item.guardianName ? <Text style={[styles.guardianText]}>Encargado: {item.guardianName}</Text> : null}
+        {item.guardianPhone ? <Text style={[styles.guardianText]}>Tel: {item.guardianPhone}</Text> : null}
       </View>
       <TouchableOpacity onPress={() => startEdit(item)}>
         <Text style={{ fontSize: 16, color: 'blue', marginRight: 12 }}>✏️</Text>
@@ -121,11 +121,11 @@ export default function ManagePeopleScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Gestión de Personas</Text>
+      <Text style={[commonStyles.title, { color: isDark ? '#fff' : '#000' }]}>Gestión de Personas</Text>
 
       <Text style={styles.label}>Nombre:</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="Ej. Juan Pérez"
         placeholderTextColor={isDark ? '#aaa' : '#666'}
         value={name}
@@ -134,7 +134,7 @@ export default function ManagePeopleScreen() {
 
       <Text style={styles.label}>Encargado legal (opcional):</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="Ej. Madre de Juan"
         placeholderTextColor={isDark ? '#aaa' : '#666'}
         value={guardianName}
@@ -143,7 +143,7 @@ export default function ManagePeopleScreen() {
 
       <Text style={styles.label}>Tel. encargado legal (opcional):</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="Ej. 8888-9999"
         keyboardType="phone-pad"
         placeholderTextColor={isDark ? '#aaa' : '#666'}
@@ -160,9 +160,9 @@ export default function ManagePeopleScreen() {
       <View style={{ marginVertical: 5 }} />
       {editMode && <Button title="Cancelar edición" color="gray" onPress={resetForm} />}
 
-      <Text style={styles.subtitle}>Buscar persona:</Text>
+      <Text style={[commonStyles.section, { color: isDark ? '#fff' : '#000' }]}>Buscar persona:</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="Buscar por nombre"
         value={searchTerm}
         onChangeText={setSearchTerm}
@@ -180,8 +180,7 @@ export default function ManagePeopleScreen() {
 
 const getStyles = (isDark: boolean) => StyleSheet.create({
   container: { flex: 1, padding: 20, backgroundColor: isDark ? '#121212' : '#fff' },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: isDark ? '#fff' : '#000' },
-  label: { fontSize: 16, marginBottom: 6, color: isDark ? '#fff' : '#000' },
+  label: { fontSize: 18, marginBottom: 6, color: isDark ? '#fff' : '#000' },
   input: {
     borderWidth: 1, borderColor: isDark ? '#555' : '#aaa', borderRadius: 4,
     padding: 10, marginBottom: 12, color: isDark ? '#fff' : '#000'
@@ -190,12 +189,10 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', marginBottom: 16,
   },
-  subtitle: { fontSize: 18, fontWeight: '600', marginVertical: 8, color: isDark ? '#fff' : '#000' },
   personRow: {
     flexDirection: 'row', alignItems: 'center',
     borderBottomWidth: 1, paddingVertical: 10,
     borderColor: isDark ? '#444' : '#ddd',
   },
-  personName: { fontSize: 16, color: isDark ? '#fff' : '#000' },
-  guardianText: { fontSize: 14, color: isDark ? '#ccc' : '#555' },
+  guardianText: { fontSize: 16, color: isDark ? '#ccc' : '#555' },
 });

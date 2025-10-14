@@ -1,4 +1,5 @@
 import React, { useContext, useState } from 'react';
+import { commonStyles } from '../Styles/commonStyles';
 import {
   View,
   Text,
@@ -37,7 +38,7 @@ export default function PeopleListScreen() {
       <Text style={styles.title}>Personas</Text>
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: 18 }]}
         placeholder="Buscar por nombre"
         value={searchTerm}
         onChangeText={setSearchTerm}
@@ -108,7 +109,8 @@ const getStyles = (theme: 'light' | 'dark') =>
     },
     nameWrapper: { flex: 1 },
     name: {
-      fontSize: 18,
+      fontSize: 20,
+      fontWeight: "600",
       color: theme === 'dark' ? '#fff' : '#000',
     },
   });

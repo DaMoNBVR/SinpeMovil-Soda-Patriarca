@@ -1,11 +1,12 @@
 import React, { useContext, useState } from 'react';
+import { commonStyles } from '../Styles/commonStyles';
 import { View, Text, FlatList, Button, Platform, StyleSheet } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { DataContext } from '../context/DataContext';
 import { getSummaryByPerson } from '../utils/summaryHelpers';
 import { useTheme } from '../context/ThemeContext';
 import { generatePDFReport } from '../utils/pdfGenerator';
-import { getLocalDate } from '../utils/dateUtils'; // ✅ Corrección importante
+import { getLocalDate } from '../utils/dateUtils';
 
 const getISOWeek = (date: Date): number => {
   const tmpDate = new Date(date.getTime());
@@ -24,7 +25,7 @@ const isSameWeek = (date1: Date, date2: Date) =>
   getISOWeek(date1) === getISOWeek(date2) && date1.getFullYear() === date2.getFullYear();
 
 const getWeekRange = (date: Date) => {
-  const day = date.getDay(); // Sunday = 0
+  const day = date.getDay();
   const start = new Date(date);
   start.setDate(date.getDate() - day);
   const end = new Date(start);
@@ -40,7 +41,7 @@ export default function WeeklySummaryScreen() {
   const isDark = theme === 'dark';
 
   const context = useContext(DataContext);
-  if (!context) return <Text>Error: DataContext no disponible</Text>;
+  if (!context) return <Text style={commonStyles.itemText}>Error: DataContext no disponible</Text>;
 
   const { purchases, payments, persons } = context;
 
@@ -52,7 +53,6 @@ export default function WeeklySummaryScreen() {
     if (date) setSelectedDate(date);
   };
 
-  // ✅ Corrige desfase de zona horaria en las fechas
   const weekPurchases = purchases.filter((p) =>
     isSameWeek(getLocalDate(p.date), selectedDate)
   );
@@ -116,11 +116,15 @@ export default function WeeklySummaryScreen() {
         data={purchaseSummary}
         keyExtractor={(item) => item.personId}
         renderItem={({ item }) => (
-          <Text style={[styles.item, { color: isDark ? '#fff' : '#000' }]}>
+          <Text style={[commonStyles.itemText, { color: isDark ? '#fff' : '#000' }]}>
             {item.name}: ₡{item.total.toFixed(2)}
           </Text>
         )}
-        ListEmptyComponent={<Text style={{ color: isDark ? '#aaa' : '#333' }}>No hay compras esta semana.</Text>}
+        ListEmptyComponent={
+          <Text style={[commonStyles.itemText, { color: isDark ? '#eee' : '#000' }]}>
+            No hay compras esta semana.
+          </Text>
+        }
       />
 
       <Text style={[styles.section, { color: isDark ? '#fff' : '#000' }]}>Pagos de la semana:</Text>
@@ -128,11 +132,15 @@ export default function WeeklySummaryScreen() {
         data={paymentSummary}
         keyExtractor={(item) => item.personId}
         renderItem={({ item }) => (
-          <Text style={[styles.paymentItem, { color: 'green' }]}>
+          <Text style={[commonStyles.itemText, { color: 'green' }]}>
             {item.name}: ₡{item.total.toFixed(2)}
           </Text>
         )}
-        ListEmptyComponent={<Text style={{ color: isDark ? '#aaa' : '#333' }}>No hay pagos esta semana.</Text>}
+        ListEmptyComponent={
+          <Text style={[commonStyles.itemText, { color: isDark ? '#eee' : '#000' }]}>
+            No hay pagos esta semana.
+          </Text>
+        }
       />
 
       <Text style={[styles.section, { color: isDark ? '#fff' : '#000' }]}>Balance semanal:</Text>
@@ -140,15 +148,19 @@ export default function WeeklySummaryScreen() {
         data={balanceSummary}
         keyExtractor={(item) => item.personId}
         renderItem={({ item }) => (
-          <Text style={[
-            styles.balanceItem,
-            { color: item.balance < 0 ? 'red' : 'green' }
-          ]}>
+          <Text
+            style={[
+              commonStyles.itemText,
+              { color: item.balance < 0 ? 'red' : 'green' }
+            ]}
+          >
             {item.name}: {item.balance < 0 ? 'Deuda' : 'Saldo'} ₡{Math.abs(item.balance).toFixed(2)}
           </Text>
         )}
         ListEmptyComponent={
-          <Text style={{ color: isDark ? '#aaa' : '#333' }}>No hay movimientos que generen balance.</Text>
+          <Text style={[commonStyles.itemText, { color: isDark ? '#eee' : '#000' }]}>
+            No hay movimientos que generen balance.
+          </Text>
         }
       />
     </View>
@@ -157,10 +169,10 @@ export default function WeeklySummaryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 8 },
-  subtitle: { fontSize: 16, marginBottom: 12 },
-  section: { fontSize: 18, fontWeight: '600', marginTop: 20, marginBottom: 6 },
-  item: { fontSize: 16, marginVertical: 4 },
-  paymentItem: { fontSize: 16, marginVertical: 4 },
-  balanceItem: { fontSize: 16, marginVertical: 4 },
+  title: { fontSize: 30, fontWeight: 'bold', marginBottom: 8 },
+  subtitle: { fontSize: 20, marginBottom: 16 },
+  section: { fontSize: 22, fontWeight: '700', marginTop: 20, marginBottom: 6 },
+  item: { fontSize: 18, fontWeight: 'bold', marginVertical: 8 },
+  paymentItem: { fontSize: 18, fontWeight: 'bold', marginVertical: 8 },
+  balanceItem: { fontSize: 18, fontWeight: 'bold', marginVertical: 8 },
 });
