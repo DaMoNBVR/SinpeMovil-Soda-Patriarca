@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useMemo } from 'react';
 import { commonStyles } from '../Styles/commonStyles';
 import {
   View,
@@ -9,6 +9,7 @@ import {
   Alert,
   FlatList,
   TouchableOpacity,
+  ActivityIndicator
 } from 'react-native';
 import { DataContext } from '../context/DataContext';
 import { Purchase } from '../models';
@@ -30,18 +31,23 @@ export default function RegisterPurchaseScreen() {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
+  
+  // --- FRENO DE MANO PARA EVITAR DUPLICADOS ---
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedPerson = persons.find((p) => p.id === selectedPersonId);
 
-  const filteredPersons = persons
-    .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => {
-      if (a.isFavorite && !b.isFavorite) return -1;
-      if (!a.isFavorite && b.isFavorite) return 1;
-      return a.name.localeCompare(b.name);
-    });
+  // Búsqueda instantánea en memoria (optimizado con useMemo)
+  const filteredPersons = useMemo(() => {
+    if (!search) return [];
+    return persons
+      .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+      .slice(0, 5); // Limitamos a 5 sugerencias
+  }, [persons, search]);
 
   const handleRegisterPurchase = async () => {
+    if (isSubmitting) return; // Evita doble click
+
     if (!selectedPersonId) {
       Alert.alert('Error', 'Selecciona una persona');
       return;
@@ -52,6 +58,8 @@ export default function RegisterPurchaseScreen() {
       Alert.alert('Error', 'Monto inválido');
       return;
     }
+
+    setIsSubmitting(true);
 
     const newPurchase: Purchase = {
       id: uuid.v4() as string,
@@ -64,6 +72,8 @@ export default function RegisterPurchaseScreen() {
     try {
       await addPurchase(newPurchase);
       Alert.alert('Éxito', 'Compra registrada');
+      
+      // Resetear campos
       setAmount('');
       setDescription('');
       setSelectedPersonId('');
@@ -71,7 +81,9 @@ export default function RegisterPurchaseScreen() {
       setInputFocused(false);
     } catch (error) {
       console.error('Error al registrar compra:', error);
-      Alert.alert('Error', 'No se pudo registrar la compra. Inténtalo de nuevo.');
+      Alert.alert('Error', 'No se pudo registrar la compra.');
+    } finally {
+      setIsSubmitting(false); // Liberamos el botón
     }
   };
 
@@ -81,8 +93,8 @@ export default function RegisterPurchaseScreen() {
 
       {selectedPerson ? (
         <View style={styles.selectedRow}>
-          <Text style={styles.selected}>
-            Seleccionado: {selectedPerson.name} {selectedPerson.isFavorite ? '⭐' : ''}
+          <Text style={[styles.selected, {color: theme === 'dark' ? '#81c784' : 'green'}]}>
+            Seleccionado: {selectedPerson.name}
           </Text>
           <TouchableOpacity
             onPress={() => {
@@ -103,7 +115,7 @@ export default function RegisterPurchaseScreen() {
             onChangeText={setSearch}
             onFocus={() => setInputFocused(true)}
           />
-          {inputFocused && (
+          {inputFocused && search.length > 0 && (
             <FlatList
               data={filteredPersons}
               keyExtractor={(item) => item.id}
@@ -128,6 +140,18 @@ export default function RegisterPurchaseScreen() {
         </>
       )}
 
+      {selectedPerson && (
+         <Text style={{ 
+             textAlign: 'center', 
+             marginBottom: 10, 
+             fontWeight: 'bold',
+             fontSize: 16,
+             color: (selectedPerson.currentBalance || 0) < 0 ? '#ff4444' : '#4caf50'
+         }}>
+            Saldo actual: ₡{selectedPerson.currentBalance || 0}
+         </Text>
+      )}
+
       <Text style={[styles.label, { fontSize: 18 }]}>Monto:</Text>
       <TextInput
         style={[styles.input, { fontSize: 18 }]}
@@ -147,7 +171,20 @@ export default function RegisterPurchaseScreen() {
         onChangeText={setDescription}
       />
 
-      <Button title="Registrar compra" onPress={handleRegisterPurchase} />
+      <TouchableOpacity
+        style={[
+            styles.button, 
+            isSubmitting && { opacity: 0.6 } 
+        ]}
+        onPress={handleRegisterPurchase}
+        disabled={isSubmitting}
+      >
+        {isSubmitting ? (
+            <ActivityIndicator color="#fff" />
+        ) : (
+            <Text style={styles.buttonText}>Registrar Compra</Text>
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -168,7 +205,7 @@ const getStyles = (theme: 'light' | 'dark') =>
       borderWidth: 1,
       borderColor: theme === 'dark' ? '#666' : '#aaa',
       borderRadius: 4,
-      padding: 8,
+      padding: 10,
       marginBottom: 10,
       color: theme === 'dark' ? '#fff' : '#000',
     },
@@ -177,22 +214,35 @@ const getStyles = (theme: 'light' | 'dark') =>
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: 10,
+      padding: 10,
+      backgroundColor: theme === 'dark' ? '#1e1e1e' : '#f0f0f0',
+      borderRadius: 8
     },
     selected: {
       fontStyle: 'italic',
-      color: 'green',
+      fontWeight: 'bold'
     },
     changeBtn: {
       color: '#007bff',
       fontWeight: 'bold',
     },
     item: {
-      paddingVertical: 5,
+      paddingVertical: 10,
       paddingHorizontal: 10,
       borderBottomWidth: 1,
       borderColor: theme === 'dark' ? '#444' : '#ddd',
+      backgroundColor: theme === 'dark' ? '#1e1e1e' : '#fafafa'
     },
-    itemText: {
-      color: theme === 'dark' ? '#fff' : '#000',
+    button: {
+        backgroundColor: '#007bff',
+        padding: 15,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 20
     },
+    buttonText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold'
+    }
   });

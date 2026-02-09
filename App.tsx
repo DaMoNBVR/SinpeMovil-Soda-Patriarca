@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react'; // <--- Agregamos useEffect
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
@@ -8,7 +8,8 @@ import LoginScreen from './src/screens/LoginScreen';
 
 function AppNavigator() {
   const { theme } = useTheme();
-  const { username } = useAuth(); // 👈 Aquí se revisa si hay sesión
+  const { username } = useAuth(); 
+
 
   return (
     <NavigationContainer theme={theme === 'dark' ? DarkTheme : DefaultTheme}>

@@ -1,14 +1,4 @@
-type Purchase = {
-  id: string;
-  personId: string;
-  amount: number;
-  date: string;
-};
-
-type Person = {
-  id: string;
-  name: string;
-};
+import { Purchase, Payment, Person } from '../models';
 
 type SummaryItem = {
   personId: string;
@@ -17,16 +7,16 @@ type SummaryItem = {
 };
 
 export function getSummaryByPerson(
-  purchases: Purchase[],
+  transactions: (Purchase | Payment)[],
   people: Person[]
 ): SummaryItem[] {
   const summaryMap: { [personId: string]: number } = {};
 
-  purchases.forEach((purchase) => {
-    if (!summaryMap[purchase.personId]) {
-      summaryMap[purchase.personId] = 0;
+  transactions.forEach((tx) => {
+    if (!summaryMap[tx.personId]) {
+      summaryMap[tx.personId] = 0;
     }
-    summaryMap[purchase.personId] += purchase.amount;
+    summaryMap[tx.personId] += tx.amount;
   });
 
   return Object.entries(summaryMap).map(([personId, total]) => {

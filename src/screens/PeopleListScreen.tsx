@@ -1,5 +1,4 @@
-import React, { useContext, useState } from 'react';
-import { commonStyles } from '../Styles/commonStyles';
+import React, { useContext, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +7,7 @@ import {
   StyleSheet,
   TextInput,
   Alert,
+  RefreshControl // <--- IMPORTANTE
 } from 'react-native';
 import { DataContext } from '../context/DataContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,12 +19,20 @@ export default function PeopleListScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const [searchTerm, setSearchTerm] = useState('');
+  const [refreshing, setRefreshing] = useState(false); // <--- ESTADO DE RECARGA
 
   if (!context) return <Text>Error: DataContext no disponible</Text>;
 
-  const { persons, toggleFavorite } = context;
+  const { persons, toggleFavorite, refreshData } = context;
 
-  const filteredPersons = persons
+  // Filtrado de duplicados por seguridad
+  const uniquePersons = useMemo(() => {
+    const map = new Map();
+    persons.forEach((p) => map.set(p.id, p));
+    return Array.from(map.values());
+  }, [persons]);
+
+  const filteredPersons = uniquePersons
     .filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => {
       if (a.isFavorite && !b.isFavorite) return -1;
@@ -33,6 +41,13 @@ export default function PeopleListScreen() {
     });
 
   const styles = getStyles(theme);
+
+  // Función para el Pull to Refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refreshData();
+    setRefreshing(false);
+  };
 
   return (
     <View style={styles.container}>
@@ -49,6 +64,23 @@ export default function PeopleListScreen() {
       <FlatList
         data={filteredPersons}
         keyExtractor={(item) => item.id}
+        
+        // --- OPTIMIZACIÓN ---
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
+
+        // --- REFRESH CONTROL (LA MAGIA) ---
+        refreshControl={
+            <RefreshControl 
+                refreshing={refreshing} 
+                onRefresh={onRefresh} 
+                colors={['#007bff']} // Color de la ruedita en Android
+                tintColor={theme === 'dark' ? '#fff' : '#000'} // iOS
+            />
+        }
+
         renderItem={({ item }) => (
           <View style={styles.row}>
             <TouchableOpacity
@@ -58,6 +90,16 @@ export default function PeopleListScreen() {
               }
             >
               <Text style={styles.name}>{item.name}</Text>
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: (item.currentBalance || 0) < 0 ? '#ff4444' : '#4caf50',
+                  fontWeight: 'bold',
+                }}
+              >
+                {(item.currentBalance || 0) < 0 ? 'Deuda: ' : 'Saldo: '}
+                ₡{Math.abs(item.currentBalance || 0).toFixed(2)}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={async () => {
@@ -65,7 +107,6 @@ export default function PeopleListScreen() {
                   await toggleFavorite(item.id);
                 } catch (error) {
                   console.error('Error al cambiar favorito:', error);
-                  Alert.alert('Error', 'No se pudo actualizar el estado de favorito.');
                 }
               }}
             >
@@ -120,7 +161,7 @@ const getStyles = (theme: 'light' | 'dark') =>
     nameWrapper: { flex: 1 },
     name: {
       fontSize: 20,
-      fontWeight: "600",
+      fontWeight: '600',
       color: theme === 'dark' ? '#fff' : '#000',
     },
   });

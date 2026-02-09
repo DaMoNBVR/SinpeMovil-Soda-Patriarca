@@ -1,10 +1,11 @@
 import React, { useContext, useState } from 'react';
 import { View, Text, StyleSheet, Button, Alert, Linking, ScrollView } from 'react-native';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import uuid from 'react-native-uuid';
 
 import { DataContext } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/StackNavigator';
 import { Payment } from '../models';
 import { useTheme } from '../context/ThemeContext';
@@ -33,21 +34,49 @@ function getPaymentDescription(type: string, comment?: string): string {
 }
 
 export default function PersonDetailScreen() {
+  const navigation = useNavigation<any>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PersonDetail'>>();
   const { personId } = params;
   const { theme } = useTheme();
+  const { role } = useAuth();
   const styles = createStyles(theme);
 
   const context = useContext(DataContext);
   if (!context) return <Text>Error: contexto no disponible</Text>;
 
-  const { persons, purchases, payments, addPayment, updatePrepaidAmount } = context;
+  const { persons, addPayment, updatePrepaidAmount, getPersonTransactions } = context;
   const person = persons.find((p) => p.id === personId);
+
+  const [purchases, setPurchases] = useState<any[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  React.useEffect(() => {
+    let active = true;
+    const fetchHistory = async () => {
+      try {
+        const history = await getPersonTransactions(personId);
+        if (active) {
+          setPurchases(history.purchases);
+          setPayments(history.payments);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (active) setLoadingHistory(false);
+      }
+    };
+    fetchHistory();
+    return () => { active = false; };
+  }, [personId]);
+
   if (!person) return <Text>Persona no encontrada</Text>;
 
   const todayStr = getLocalDateString(new Date());
-  const personPurchases = purchases.filter((p) => p.personId === personId);
-  const personPayments = payments.filter((p) => p.personId === personId);
+
+  // Use local state
+  const personPurchases = purchases;
+  const personPayments = payments;
 
   const groupedPurchases = groupEventsByWeek(personPurchases);
   const groupedPayments = groupEventsByWeek(personPayments);
@@ -82,25 +111,25 @@ export default function PersonDetailScreen() {
   let deudaSemana = 0;
   let pagosDesdeSemana = 0;
 
-for (const event of sortedEvents) {
-  const fecha = getLocalDate(event.date);
-  const esPago = (event as Payment).type !== undefined;
-  const monto = esPago ? (event as Payment).amount : -event.amount;
+  for (const event of sortedEvents) {
+    const fecha = getLocalDate(event.date);
+    const esPago = (event as Payment).type !== undefined;
+    const monto = esPago ? (event as Payment).amount : -event.amount;
 
-  if (selectedWeekKey === 'general') {
-    saldoSemana += monto;
-  } else {
-    if (startDate && fecha < startDate) {
-      saldoInicial += monto;
-    } else if (startDate && endDate && fecha >= startDate && fecha <= endDate) {
+    if (selectedWeekKey === 'general') {
       saldoSemana += monto;
-      deudaSemana += monto;
-      if (esPago) pagosDesdeSemana += monto; // ✅ pagos de esta semana
-    } else if (startDate && endDate && fecha > endDate && esPago) {
-      pagosDesdeSemana += monto; // ✅ pagos posteriores
+    } else {
+      if (startDate && fecha < startDate) {
+        saldoInicial += monto;
+      } else if (startDate && endDate && fecha >= startDate && fecha <= endDate) {
+        saldoSemana += monto;
+        deudaSemana += monto;
+        if (esPago) pagosDesdeSemana += monto; // ✅ pagos de esta semana
+      } else if (startDate && endDate && fecha > endDate && esPago) {
+        pagosDesdeSemana += monto; // ✅ pagos posteriores
+      }
     }
   }
-}
 
   const saldoFinal = selectedWeekKey === 'general' ? saldoSemana : saldoInicial + saldoSemana;
 
@@ -108,14 +137,14 @@ for (const event of sortedEvents) {
   let mensajeDeudaCubierta = '';
 
   if (selectedWeekKey === 'general') {
-  mostrarBotonPago = saldoSemana < 0;
-} else if (saldoSemana < 0) {
-  if (pagosDesdeSemana >= -saldoSemana) {
-  mensajeDeudaCubierta = '✅ Esta deuda fue saldada completamente.';
-} else if (pagosDesdeSemana > 0) {
-  mensajeDeudaCubierta = '⚠️ Esta deuda fue pagada parcialmente.';
-}
-}
+    mostrarBotonPago = saldoSemana < 0;
+  } else if (saldoSemana < 0) {
+    if (pagosDesdeSemana >= -saldoSemana) {
+      mensajeDeudaCubierta = '✅ Esta deuda fue saldada completamente.';
+    } else if (pagosDesdeSemana > 0) {
+      mensajeDeudaCubierta = '⚠️ Esta deuda fue pagada parcialmente.';
+    }
+  }
 
   const handlePayDebt = () => {
     Alert.alert('Confirmar pago de deuda', '¿Está seguro de que desea registrar este pago?', [
@@ -169,14 +198,14 @@ for (const event of sortedEvents) {
     Linking.openURL(url).catch(() => Alert.alert('Error', 'No se pudo abrir WhatsApp.'));
   };
 
-      // Ordenar por fecha antes de mostrar
-    const sortedPurchases = [...currentWeekPurchases].sort(
-      (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
-    );
+  // Ordenar por fecha antes de mostrar
+  const sortedPurchases = [...currentWeekPurchases].sort(
+    (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
+  );
 
-const sortedPayments = [...currentWeekPayments].sort(
-  (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
-);
+  const sortedPayments = [...currentWeekPayments].sort(
+    (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
+  );
 
 
   return (
@@ -184,11 +213,11 @@ const sortedPayments = [...currentWeekPayments].sort(
       <Text style={styles.title}>{person.name}</Text>
       {person.guardianName && <Text style={styles.subinfo}>Encargado: {person.guardianName}</Text>}
       {person.guardianPhone && <Text style={styles.subinfo}>📞 {person.guardianPhone}</Text>}
-    
+
       <Picker selectedValue={selectedWeekKey} onValueChange={setSelectedWeekKey}>
         <Picker.Item label="Historial general" value="general" />
         {allWeekGroups.map((g) => (
-          <Picker.Item  key={g.key} label={getWeekRangeLabel(g.startDate)} value={g.key} />
+          <Picker.Item key={g.key} label={getWeekRangeLabel(g.startDate)} value={g.key} />
         ))}
       </Picker>
 
@@ -209,23 +238,34 @@ const sortedPayments = [...currentWeekPayments].sort(
       )}
       {mostrarBotonPago && <Button title="Pagar deuda" color="#f05454" onPress={handlePayDebt} />}
 
+      {role === 'admin' && (
+        <>
+          <View style={{ marginVertical: 10 }} />
+          <Button
+            title="Ajuste Manual (Admin)"
+            color="#FFA500"
+            onPress={() => navigation.navigate('ManualAdjustment', { personId: person.id })}
+          />
+        </>
+      )}
+
       <View style={{ marginVertical: 10 }} />
       <Button title="Exportar PDF" onPress={handleExportPDF} />
       <View style={{ marginVertical: 10 }} />
       {person.guardianPhone && <Button title="Enviar por WhatsApp" color="#25D366" onPress={handleWhatsApp} />}
 
       <Text style={styles.section}>Compras:</Text>
-        {sortedPurchases.map((item) => (
-      <Text style={styles.item} key={item.id}>
-        📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {item.description || 'Sin descripción'}
-      </Text>
+      {sortedPurchases.map((item) => (
+        <Text style={styles.item} key={item.id}>
+          📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {item.description || 'Sin descripción'}
+        </Text>
       ))}
 
       <Text style={styles.section}>Pagos y ajustes:</Text>
-        {sortedPayments.map((item) => (
-      <Text style={styles.item} key={item.id}>
-        📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {getPaymentDescription(item.type, item.comment)}
-      </Text>
+      {sortedPayments.map((item) => (
+        <Text style={styles.item} key={item.id}>
+          📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {getPaymentDescription(item.type, item.comment)}
+        </Text>
       ))}
     </ScrollView>
   );

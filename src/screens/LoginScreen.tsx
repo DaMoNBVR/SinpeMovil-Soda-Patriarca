@@ -43,9 +43,10 @@ export default function LoginScreen() {
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
-        login(username); // Actualiza el AuthContext
-        Alert.alert('Bienvenido', `Hola, ${username}`);
-        login(username); 
+        const userData = snapshot.docs[0].data();
+        const role = userData.role === 'admin' ? 'admin' : 'employee';
+        await login(username, role);
+        Alert.alert('Bienvenido', `Hola, ${username} (${role === 'admin' ? 'Admin' : 'Empleado'})`);
       } else {
         Alert.alert('Error', 'Credenciales incorrectas');
       }

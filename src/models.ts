@@ -4,6 +4,7 @@ export interface Person {
   id: string;           // identificador único (puede ser UUID o código)
   name: string;
   prepaidAmount: number;
+  currentBalance?: number;
   isFavorite?: boolean;
   guardianName?: string;
   guardianPhone?: string;
@@ -31,5 +32,6 @@ export interface User {
   id: string;
   username: string;
   password: string;
+  role: 'admin' | 'employee';
 }
 
