@@ -11,7 +11,7 @@ import {
   getDoc,
   query,
   where,
-  writeBatch,
+  writeBatch, // <--- LA CLAVE DE LA SEGURIDAD
   increment,
   orderBy,
   addDoc
@@ -31,6 +31,7 @@ interface DataContextType {
   editPerson: (updatedPerson: Person) => Promise<void>;
   getPersonTransactions: (personId: string) => Promise<{ purchases: Purchase[]; payments: Payment[] }>;
   getTransactionsByDateRange: (startDate: string, endDate: string) => Promise<{ purchases: Purchase[]; payments: Payment[] }>;
+  recalculatePersonBalance: (personId: string) => Promise<void>;
   loadMorePersons: () => Promise<void>;
   loadingMore: boolean;
   hasMore: boolean;
@@ -73,7 +74,6 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   const loadMorePersons = async () => {};
 
-  // Recarga Quirúrgica: Actualiza solo a UNA persona desde la DB
   const reloadSinglePerson = async (personId: string) => {
     try {
       const personRef = doc(db, 'persons', personId);
@@ -87,6 +87,38 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // --- FUNCIÓN DE SEGURIDAD (Recalcular Saldo Real) ---
+  const recalculatePersonBalance = async (personId: string) => {
+    try {
+        console.log(`Recalculando saldo para: ${personId}...`);
+        const purchasesQ = query(collection(db, 'purchases'), where('personId', '==', personId));
+        const paymentsQ = query(collection(db, 'payments'), where('personId', '==', personId));
+        
+        const [purchasesSnap, paymentsSnap] = await Promise.all([
+            getDocs(purchasesQ),
+            getDocs(paymentsQ)
+        ]);
+
+        let totalDebt = 0;
+        let totalPaid = 0;
+
+        purchasesSnap.forEach(doc => { totalDebt += (doc.data().amount || 0); });
+        paymentsSnap.forEach(doc => { totalPaid += (doc.data().amount || 0); });
+
+        const realBalance = totalPaid - totalDebt;
+
+        // Actualizamos sin batch aquí porque es una corrección, pero directo a la fuente
+        await updateDoc(doc(db, 'persons', personId), { currentBalance: realBalance });
+        setPersons(prev => prev.map(p => p.id === personId ? { ...p, currentBalance: realBalance } : p));
+        
+        Alert.alert("Éxito", `Saldo sincronizado a: ₡${realBalance}`);
+    } catch (error) {
+        console.error("Error recalculando:", error);
+        Alert.alert("Error", "No se pudo recalcular el saldo.");
+    }
+  };
+
+  // --- TRANSACCIÓN ATÓMICA: AGREGAR PERSONA ---
   const addPerson = async (data: { name: string; guardianName?: string; guardianPhone?: string }) => {
     if (typeof data !== 'object' || !data.name) {
          Alert.alert("Error", "Datos inválidos.");
@@ -103,6 +135,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         prepaidAmount: 0, 
         createdAt: new Date().toISOString()
       };
+      
+      // En addPerson no necesitamos batch complejo, pero usamos la referencia limpia
       const docRef = await addDoc(collection(db, 'persons'), newPersonData);
       const newPerson: Person = { id: docRef.id, ...newPersonData };
       setPersons((prev) => [...prev, newPerson].sort((a, b) => a.name.localeCompare(b.name)));
@@ -114,24 +148,35 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   const updatePrepaidAmount = async (id: string, amount: number) => {
     try {
+      // Usamos updateDoc simple aquí, no crítico para el balance global de deuda
       const person = persons.find((p) => p.id === id);
       if (!person) return;
       const newAmount = (person.prepaidAmount || 0) + amount;
       await updateDoc(doc(db, 'persons', id), { prepaidAmount: newAmount });
-      // Aquí sí podemos hacer update local porque es un campo simple
       setPersons(prev => prev.map(p => p.id === id ? { ...p, prepaidAmount: newAmount } : p));
     } catch (error) { console.error(error); throw error; }
   };
 
+  // --- TRANSACCIÓN ATÓMICA: COMPRA ---
   const addPurchase = async (purchase: Purchase) => {
     try {
-      // 1. Guardar Compra
-      await setDoc(doc(db, 'purchases', purchase.id), purchase);
-      // 2. Actualizar Saldo en DB
-      await updateDoc(doc(db, 'persons', purchase.personId), {
+      // Usamos BATCH para asegurar que si falla uno, fallen los dos
+      const batch = writeBatch(db);
+
+      // 1. Crear el recibo de compra
+      const purchaseRef = doc(db, 'purchases', purchase.id);
+      batch.set(purchaseRef, purchase);
+
+      // 2. Actualizar el saldo de la persona
+      const personRef = doc(db, 'persons', purchase.personId);
+      batch.update(personRef, {
         currentBalance: increment(-purchase.amount)
       });
-      // 3. NO HACEMOS CÁLCULO LOCAL. Recargamos la verdad de la DB.
+
+      // 3. Ejecutar todo junto atómicamente
+      await batch.commit();
+
+      // 4. Actualizar UI (Recarga segura)
       await reloadSinglePerson(purchase.personId);
     } catch (error) {
       console.error('Error al agregar compra:', error);
@@ -140,20 +185,30 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // --- TRANSACCIÓN ATÓMICA: PAGO ---
   const addPayment = async (payment: Payment) => {
     try {
-      // 1. Guardar Pago
-      await setDoc(doc(db, 'payments', payment.id), payment);
-      // 2. Actualizar Saldo en DB
-      await updateDoc(doc(db, 'persons', payment.personId), {
+      const batch = writeBatch(db);
+
+      // 1. Crear el recibo de pago
+      const paymentRef = doc(db, 'payments', payment.id);
+      batch.set(paymentRef, payment);
+
+      // 2. Actualizar el saldo de la persona
+      const personRef = doc(db, 'persons', payment.personId);
+      batch.update(personRef, {
         currentBalance: increment(payment.amount)
       });
+
+      // 3. Ejecutar todo junto
+      await batch.commit();
       
+      // Lógica de prepago (secundaria)
       if (payment.type === 'prepaid') {
         await updatePrepaidAmount(payment.personId, payment.amount);
       }
 
-      // 3. Recargamos la verdad de la DB. Adiós fantasmas.
+      // 4. Actualizar UI
       await reloadSinglePerson(payment.personId);
 
     } catch (error) {
@@ -225,7 +280,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     <DataContext.Provider value={{
         persons, loading, refreshData, loadMorePersons, addPurchase, addPayment, addPerson, 
         deletePerson, toggleFavorite, updatePrepaidAmount, editPerson, getPersonTransactions, 
-        getTransactionsByDateRange, loadingMore: false, hasMore: false
+        getTransactionsByDateRange, recalculatePersonBalance, loadingMore: false, hasMore: false
       }}>
       {children}
     </DataContext.Provider>

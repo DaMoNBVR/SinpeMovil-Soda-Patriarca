@@ -1,5 +1,5 @@
 import React, { useContext, useState } from 'react';
-import { View, Text, StyleSheet, Button, Alert, Linking, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Button, Alert, Linking, ScrollView, TouchableOpacity } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import uuid from 'react-native-uuid';
@@ -44,7 +44,10 @@ export default function PersonDetailScreen() {
   const context = useContext(DataContext);
   if (!context) return <Text>Error: contexto no disponible</Text>;
 
-  const { persons, addPayment, updatePrepaidAmount, getPersonTransactions } = context;
+  // AÑADIDO: recalculatePersonBalance
+  const { persons, addPayment, updatePrepaidAmount, getPersonTransactions, recalculatePersonBalance } = context;
+  
+  // LIVE DATA: Buscamos a la persona directo del estado para ver cambios instantáneos
   const person = persons.find((p) => p.id === personId);
 
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -74,7 +77,6 @@ export default function PersonDetailScreen() {
 
   const todayStr = getLocalDateString(new Date());
 
-  // Use local state
   const personPurchases = purchases;
   const personPayments = payments;
 
@@ -124,9 +126,9 @@ export default function PersonDetailScreen() {
       } else if (startDate && endDate && fecha >= startDate && fecha <= endDate) {
         saldoSemana += monto;
         deudaSemana += monto;
-        if (esPago) pagosDesdeSemana += monto; // ✅ pagos de esta semana
+        if (esPago) pagosDesdeSemana += monto;
       } else if (startDate && endDate && fecha > endDate && esPago) {
-        pagosDesdeSemana += monto; // ✅ pagos posteriores
+        pagosDesdeSemana += monto;
       }
     }
   }
@@ -207,7 +209,6 @@ export default function PersonDetailScreen() {
     (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
   );
 
-
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>{person.name}</Text>
@@ -231,6 +232,22 @@ export default function PersonDetailScreen() {
         <>
           <Text style={[styles.section, { color: saldoFinal < 0 ? 'red' : 'green' }]}>Saldo final acumulado: {saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡{Math.abs(saldoFinal).toFixed(2)}</Text>
         </>
+      )}
+
+      {/* BOTÓN DE SINCRONIZACIÓN DE EMERGENCIA */}
+      {role === 'admin' && (
+        <TouchableOpacity 
+            style={{
+                marginTop: 10, 
+                padding: 8, 
+                backgroundColor: '#6c757d', 
+                borderRadius: 5,
+                alignItems: 'center'
+            }}
+            onPress={() => recalculatePersonBalance(person.id)}
+        >
+            <Text style={{color: '#fff', fontWeight: 'bold'}}>🔄 Sincronizar Saldo (Reparar)</Text>
+        </TouchableOpacity>
       )}
 
       {mensajeDeudaCubierta !== '' && (

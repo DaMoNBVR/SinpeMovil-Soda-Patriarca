@@ -2,7 +2,6 @@ import React, { useContext, useState, useEffect } from 'react';
 import { View, Text, Button, Platform, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { DataContext } from '../context/DataContext';
-import { getSummaryByPerson } from '../utils/summaryHelpers';
 import { useTheme } from '../context/ThemeContext';
 import { generatePDFReport } from '../utils/pdfGenerator';
 import { getLocalDateString } from '../utils/dateUtils';
@@ -17,8 +16,6 @@ export default function FinancialSummaryScreen({ route }: any) {
     const styles = getStyles(isDark);
 
     const context = useContext(DataContext);
-
-    // Initial mode from route params or default to daily
     const initialMode = route.params?.mode || 'daily';
     const [mode, setMode] = useState<TabMode>(initialMode);
     const [selectedDate, setSelectedDate] = useState(new Date());
@@ -51,6 +48,7 @@ export default function FinancialSummaryScreen({ route }: any) {
                 endStr = getLocalDateString(end);
             }
 
+            // Aquí traemos TODO lo que esté en ese rango de fechas
             const data = await getTransactionsByDateRange(startStr, endStr);
             setPurchases(data.purchases);
             setPayments(data.payments);
@@ -64,13 +62,10 @@ export default function FinancialSummaryScreen({ route }: any) {
 
     const getWeekRange = (date: Date) => {
         const day = date.getDay();
-        // Adjust logic to make Monday the start of week if needed? undefined standard uses Sunday-Saturday.
-        // Let's assume user wants standard Sunday-Saturday or Monday-Sunday? 
-        // Previous code used `date.getDate() - day`. If day is 0 (Sunday), starts on Sunday.
         const start = new Date(date);
-        start.setDate(date.getDate() - day); // Start of week (Sunday)
+        start.setDate(date.getDate() - day);
         const end = new Date(start);
-        end.setDate(start.getDate() + 6); // End of week (Saturday)
+        end.setDate(start.getDate() + 6);
         return { start, end };
     };
 
@@ -89,16 +84,49 @@ export default function FinancialSummaryScreen({ route }: any) {
         return `Del ${formatDateLabel(start)} al ${formatDateLabel(end)}`;
     };
 
-    const purchaseSummary = getSummaryByPerson(purchases, persons);
-    const paymentSummary = getSummaryByPerson(payments, persons);
+    // --- LÓGICA MEJORADA DE CÁLCULO ---
+    const calculateGroupedSummary = (items: (Purchase | Payment)[], personList: Person[], filterType?: string) => {
+        const summaryMap = new Map<string, number>();
 
+        items.forEach(item => {
+            // Filtro opcional: Si queremos separar ajustes manuales
+            // @ts-ignore
+            if (filterType === 'manualAdjustment' && item.type !== 'manualAdjustment') return;
+            // @ts-ignore
+            if (filterType === 'regularPayment' && item.type === 'manualAdjustment') return;
+
+            const current = summaryMap.get(item.personId) || 0;
+            summaryMap.set(item.personId, current + item.amount);
+        });
+
+        return personList.map(person => ({
+            personId: person.id,
+            name: person.name,
+            total: summaryMap.get(person.id) || 0
+        })).filter(item => item.total !== 0);
+    };
+
+    const purchaseSummary = calculateGroupedSummary(purchases, persons);
+    
+    // Separamos pagos normales de ajustes manuales para claridad
+    const regularPaymentSummary = calculateGroupedSummary(payments, persons, 'regularPayment');
+    const adjustmentSummary = calculateGroupedSummary(payments, persons, 'manualAdjustment');
+
+    // Balance total (incluye todo)
     const balanceSummary = persons.map((person) => {
-        const totalPurchases = purchaseSummary.find(p => p.personId === person.id)?.total || 0;
-        const totalPayments = paymentSummary.find(p => p.personId === person.id)?.total || 0;
+        // Obtenemos el total bruto de pagos de este cliente (normales + ajustes)
+        const totalPaymentsRaw = payments
+            .filter(p => p.personId === person.id)
+            .reduce((sum, p) => sum + p.amount, 0);
+            
+        const totalPurchasesRaw = purchases
+            .filter(p => p.personId === person.id)
+            .reduce((sum, p) => sum + p.amount, 0);
+
         return {
             personId: person.id,
             name: person.name,
-            balance: totalPayments - totalPurchases,
+            balance: totalPaymentsRaw - totalPurchasesRaw,
         };
     }).filter(item => item.balance !== 0);
 
@@ -106,46 +134,40 @@ export default function FinancialSummaryScreen({ route }: any) {
         const rangeLabel = getRangeLabel();
         const title = `Resumen ${mode === 'daily' ? 'Diario' : 'Semanal'} – ${rangeLabel}`;
 
-        const comprasRows = purchaseSummary.length
-            ? purchaseSummary.map(item =>
-                `<div class="item">${item.name}: ₡${item.total.toFixed(2)}</div>`
-            ).join('')
-            : '<div class="item">No hay compras este período.</div>';
+        const generateRows = (summary: any[], emptyMsg: string, color: string = 'black') => 
+            summary.length
+                ? summary.map(item => `<div class="item" style="color:${color}">${item.name}: ₡${item.total.toFixed(2)}</div>`).join('')
+                : `<div class="item">${emptyMsg}</div>`;
 
-        const pagosRows = paymentSummary.length
-            ? paymentSummary.map(item =>
-                `<div class="item">${item.name}: ₡${item.total.toFixed(2)}</div>`
-            ).join('')
-            : '<div class="item">No hay pagos este período.</div>';
+        const comprasRows = generateRows(purchaseSummary, 'No hay compras.');
+        const pagosRows = generateRows(regularPaymentSummary, 'No hay pagos regulares.', 'green');
+        const ajustesRows = generateRows(adjustmentSummary, 'No hay ajustes manuales.', 'orange');
 
         const balanceRows = balanceSummary.length
             ? balanceSummary.map(item => {
                 const color = item.balance < 0 ? 'red' : 'green';
-                const label = item.balance < 0 ? 'Deuda' : 'Saldo';
+                const label = item.balance < 0 ? 'Deuda neta' : 'Saldo a favor';
                 return `<div class="item" style="color:${color};">${item.name}: ${label} ₡${Math.abs(item.balance).toFixed(2)}</div>`;
             }).join('')
-            : '<div class="item">No hay movimientos que generen balance.</div>';
+            : '<div class="item">Sin movimientos netos.</div>';
 
         const content = `
         <h2>Compras</h2>${comprasRows}
-        <h2>Pagos</h2>${pagosRows}
-        <h2>Balance del período</h2>${balanceRows}
+        <h2>Pagos Regulares</h2>${pagosRows}
+        <h2>Ajustes Manuales</h2>${ajustesRows}
+        <hr/>
+        <h2>Balance del período (Neto)</h2>${balanceRows}
       `;
-
         generatePDFReport(title, content);
     };
 
     return (
         <View style={styles.container}>
             <View style={styles.tabContainer}>
-                <TouchableOpacity
-                    style={[styles.tab, mode === 'daily' && styles.activeTab]}
-                    onPress={() => setMode('daily')}>
+                <TouchableOpacity style={[styles.tab, mode === 'daily' && styles.activeTab]} onPress={() => setMode('daily')}>
                     <Text style={[styles.tabText, mode === 'daily' && styles.activeTabText]}>Diario</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.tab, mode === 'weekly' && styles.activeTab]}
-                    onPress={() => setMode('weekly')}>
+                <TouchableOpacity style={[styles.tab, mode === 'weekly' && styles.activeTab]} onPress={() => setMode('weekly')}>
                     <Text style={[styles.tabText, mode === 'weekly' && styles.activeTabText]}>Semanal</Text>
                 </TouchableOpacity>
             </View>
@@ -173,43 +195,52 @@ export default function FinancialSummaryScreen({ route }: any) {
                 <ActivityIndicator size="large" color="#0000ff" style={{ marginTop: 20 }} />
             ) : (
                 <ScrollView style={{ flex: 1 }}>
+                    {/* SECCIÓN COMPRAS */}
                     <View style={styles.sectionContainer}>
                         <Text style={[styles.sectionTitle, { color: isDark ? '#fff' : '#000' }]}>Compras</Text>
-                        {purchaseSummary.length === 0 ? (
-                            <Text style={[commonStyles.itemText, { color: isDark ? '#aaa' : '#666' }]}>No hay compras.</Text>
-                        ) : (
+                        {purchaseSummary.length === 0 ? <Text style={styles.emptyText}>Sin compras.</Text> : 
                             purchaseSummary.map(item => (
                                 <Text key={item.personId} style={[commonStyles.itemText, { color: isDark ? '#fff' : '#000' }]}>
                                     {item.name}: ₡{item.total.toFixed(2)}
                                 </Text>
                             ))
-                        )}
+                        }
                     </View>
 
+                    {/* SECCIÓN PAGOS REGULARES */}
                     <View style={styles.sectionContainer}>
                         <Text style={[styles.sectionTitle, { color: isDark ? '#fff' : '#000' }]}>Pagos</Text>
-                        {paymentSummary.length === 0 ? (
-                            <Text style={[commonStyles.itemText, { color: isDark ? '#aaa' : '#666' }]}>No hay pagos.</Text>
-                        ) : (
-                            paymentSummary.map(item => (
+                        {regularPaymentSummary.length === 0 ? <Text style={styles.emptyText}>Sin pagos.</Text> : 
+                            regularPaymentSummary.map(item => (
                                 <Text key={item.personId} style={[commonStyles.itemText, { color: 'green' }]}>
                                     {item.name}: ₡{item.total.toFixed(2)}
                                 </Text>
                             ))
-                        )}
+                        }
                     </View>
 
+                    {/* SECCIÓN AJUSTES MANUALES (NUEVA) */}
+                    {adjustmentSummary.length > 0 && (
+                        <View style={styles.sectionContainer}>
+                            <Text style={[styles.sectionTitle, { color: '#FFA500' }]}>Ajustes Manuales</Text>
+                            {adjustmentSummary.map(item => (
+                                <Text key={item.personId} style={[commonStyles.itemText, { color: '#FFA500' }]}>
+                                    {item.name}: ₡{item.total.toFixed(2)}
+                                </Text>
+                            ))}
+                        </View>
+                    )}
+
+                    {/* SECCIÓN BALANCE */}
                     <View style={styles.sectionContainer}>
                         <Text style={[styles.sectionTitle, { color: isDark ? '#fff' : '#000' }]}>Balance del Período</Text>
-                        {balanceSummary.length === 0 ? (
-                            <Text style={[commonStyles.itemText, { color: isDark ? '#aaa' : '#666' }]}>Sin cambios en balance.</Text>
-                        ) : (
+                        {balanceSummary.length === 0 ? <Text style={styles.emptyText}>Equilibrado.</Text> : 
                             balanceSummary.map(item => (
                                 <Text key={item.personId} style={[commonStyles.itemText, { color: item.balance < 0 ? 'red' : 'green' }]}>
-                                    {item.name}: {item.balance < 0 ? 'Deuda' : 'Saldo'} ₡{Math.abs(item.balance).toFixed(2)}
+                                    {item.name}: {item.balance < 0 ? 'Deuda neta' : 'A favor'} ₡{Math.abs(item.balance).toFixed(2)}
                                 </Text>
                             ))
-                        )}
+                        }
                     </View>
                     <View style={{ height: 40 }} />
                 </ScrollView>
@@ -229,4 +260,5 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
     controls: { flexDirection: 'row', justifyContent: 'center', marginBottom: 16 },
     sectionContainer: { marginBottom: 20 },
     sectionTitle: { fontSize: 22, fontWeight: '700', marginBottom: 8, borderBottomWidth: 1, borderBottomColor: '#ccc', paddingBottom: 4 },
-});
+    emptyText: { color: '#888', fontStyle: 'italic' }
+}); 
