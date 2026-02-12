@@ -15,8 +15,7 @@ I am a **Junior QA Engineer** and **Software Developer** based in Costa Rica. I 
 - **QA:** Manual Testing, Regression, Bug Tracking (Jira/TestRail).
 
 ### 📈 My Best Projects
-- [Soda Management App](LINK_A_TU_REPO) - A full-stack solution for business accounting.
-- [C# Logic Mastery](LINK_A_TU_REPO) - Complex algorithms and C# implementation.
+- [Soda Management App](https://github.com/DaMoNBVR/SinpeMovil-Soda-Patriarca) - A full-stack solution for business accounting
 
 ---
-📫 **How to reach me:** [Tu LinkedIn] | Baironvargas0@gmail.com
+📫 **How to reach me:** [https://www.linkedin.com/in/bayron-alexander-vargas-redondo-510604289/] | Baironvargas0@gmail.com
