@@ -86,11 +86,11 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
         padding: 10, marginBottom: 12, color: isDark ? '#fff' : '#000', fontSize: 16
     },
     switchRow: {
-    flexDirection: 'row',       // Pone los elementos uno al lado del otro
-    justifyContent: 'space-between', // Empuja el Texto a la izquierda y el Switch a la derecha
-    alignItems: 'center',       // Los centra verticalmente
-    width: '100%',              // <--- CLAVE: Asegura que use todo el ancho de la pantalla
+    flexDirection: 'row',
+    justifyContent: 'space-between', 
+    alignItems: 'center',    
+    width: '100%',             
     marginBottom: 20,
-    paddingVertical: 10,        // Un poco de aire arriba y abajo
+    paddingVertical: 10, 
     },
 });

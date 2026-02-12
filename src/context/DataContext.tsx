@@ -11,7 +11,7 @@ import {
   getDoc,
   query,
   where,
-  writeBatch, // <--- LA CLAVE DE LA SEGURIDAD
+  writeBatch,
   increment,
   orderBy,
   addDoc

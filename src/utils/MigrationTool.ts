@@ -20,8 +20,6 @@ export const runBalanceMigration = async () => {
 
         for (const personDoc of personsSnap.docs) {
             const personId = personDoc.id;
-            // Filter in memory (expensive but necessary for migration without simple queries)
-            // Assuming personId matches string vs string
             const personPurchases = purchases.filter((p: any) => p.personId === personId);
             const personPayments = payments.filter((p: any) => p.personId === personId);
 
@@ -30,7 +28,7 @@ export const runBalanceMigration = async () => {
 
             // Balance = Compras - Pagos
             // Si prepago se considera pago, reduce la deuda.
-            const balance = totalPayments - totalPurchases; // ✅ Esto hace que la deuda sea negativa (Rojo)
+            const balance = totalPayments - totalPurchases;
 
             const ref = doc(db, 'persons', personId);
             batch.update(ref, { currentBalance: balance });

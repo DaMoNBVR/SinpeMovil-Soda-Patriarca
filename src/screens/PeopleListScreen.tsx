@@ -71,7 +71,7 @@ export default function PeopleListScreen() {
         windowSize={5}
         removeClippedSubviews={true}
 
-        // --- REFRESH CONTROL (LA MAGIA) ---
+        // --- REFRESH CONTROL ---
         refreshControl={
             <RefreshControl 
                 refreshing={refreshing} 

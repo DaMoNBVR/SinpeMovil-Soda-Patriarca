@@ -15,7 +15,7 @@ import { Payment } from '../models';
 import uuid from 'react-native-uuid';
 import { useTheme } from '../context/ThemeContext';
 import { getLocalDateString } from '../utils/dateUtils';
-import { useNavigation } from '@react-navigation/native'; // <--- IMPORTANTE
+import { useNavigation } from '@react-navigation/native';
 
 export default function RegisterPaymentScreen() {
   const { theme } = useTheme();

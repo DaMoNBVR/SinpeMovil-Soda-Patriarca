@@ -78,7 +78,7 @@ export default function HomeScreen() {
       </TouchableOpacity>
 
 
-      {/* --- SECCIÓN DE ADMINISTRACIÓN (Solo si es necesario o para todos según tu lógica) --- */}
+      {/*SECCIÓN DE ADMINISTRACIÓN*/}
       <Text style={styles.sectionTitle}>Administración</Text>
 
       <View style={styles.grid}>
@@ -98,7 +98,7 @@ export default function HomeScreen() {
           <Text style={[styles.cardText, { color: isDark ? '#fff' : '#333', marginTop: 5 }]}>Ajuste Manual</Text>
         </TouchableOpacity>
         
-        {/* Solo mostrar Crear Usuario si es Admin (opcional) */}
+        {/* Solo mostrar Crear Usuario si es Admin */}
         {role === 'admin' && (
              <TouchableOpacity
              style={[styles.card, styles.adminCard]}

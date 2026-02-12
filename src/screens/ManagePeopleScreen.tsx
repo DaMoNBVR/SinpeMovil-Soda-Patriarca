@@ -88,7 +88,7 @@ export default function ManagePeopleScreen() {
   const handleEdit = (person: Person) => {
     setEditingId(person.id);
     setName(person.name);
-    // Aquí mapeamos correctamente tus campos de la DB al formulario
+    // Aquí mapeamos correctamente los campos de la DB al formulario
     setGuardianName(person.guardianName || ''); 
     setGuardianPhone(person.guardianPhone || '');
   };

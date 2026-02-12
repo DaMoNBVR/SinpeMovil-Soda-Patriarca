@@ -1,10 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../context/ThemeContext';
-
-// BORRAMOS EL IMPORT DE LOGIN PORQUE YA NO VA AQUÍ
-// import LoginScreen from '../screens/LoginScreen'; 
-
 import PeopleListScreen from '../screens/PeopleListScreen';
 import HomeScreen from '../screens/HomeScreen';
 import RegisterPurchaseScreen from '../screens/RegisterPurchaseScreen';
@@ -16,7 +12,6 @@ import ManagePeopleScreen from '../screens/ManagePeopleScreen';
 import RegisterUserScreen from '../screens/RegisterUserScreen';
 
 export type RootStackParamList = {
-  // Login: undefined; // <--- Ya no necesitamos esto en el stack
   Home: undefined;
   RegisterPurchase: undefined;
   RegisterPayment: undefined;
@@ -36,7 +31,7 @@ export default function StackNavigator() {
 
   return (
     <Stack.Navigator
-      initialRouteName="Home" // <--- CAMBIO CLAVE: Empezamos en HOME
+      initialRouteName="Home"
       screenOptions={{
         headerStyle: {
           backgroundColor: theme === 'dark' ? '#121212' : '#f2f2f2',
@@ -49,8 +44,6 @@ export default function StackNavigator() {
         headerTitleAlign: 'center',
       }}
     >
-      {/* <Stack.Screen name="Login" ... />  <--- BORRADO: El Login vive fuera del stack ahora */}
-      
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Inicio' }} />
       <Stack.Screen name="PeopleList" component={PeopleListScreen} options={{ title: 'Listado de Personas' }} />
       <Stack.Screen name="RegisterPurchase" component={RegisterPurchaseScreen} options={{ title: 'Nueva Compra' }} />
