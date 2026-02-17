@@ -7,7 +7,8 @@ import {
   Alert,
   FlatList,
   TouchableOpacity,
-  ActivityIndicator
+  ActivityIndicator,
+  Keyboard
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { DataContext } from '../context/DataContext';
@@ -17,6 +18,8 @@ import { commonStyles } from '../Styles/commonStyles';
 import uuid from 'react-native-uuid';
 import { getLocalDateString } from '../utils/dateUtils';
 import { Payment, Purchase } from '../models';
+
+type AdjustmentMode = 'difference' | 'absolute';
 
 export default function ManualAdjustmentScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'ManualAdjustment'>>();
@@ -32,9 +35,14 @@ export default function ManualAdjustmentScreen() {
   const params = route.params as any;
   const initialPersonId = params?.personId || ''; 
 
+  // Estados
   const [search, setSearch] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState(initialPersonId);
-  const [targetBalance, setTargetBalance] = useState('');
+  
+  // MODOS: 'difference' (Sumar/Restar) o 'absolute' (Fijar saldo final)
+  const [mode, setMode] = useState<AdjustmentMode>('difference');
+  
+  const [amountInput, setAmountInput] = useState('');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
@@ -52,70 +60,96 @@ export default function ManualAdjustmentScreen() {
     setSelectedPersonId(person.id);
     setSearch('');
     setInputFocused(false);
-    // Seteamos el saldo actual en el input para que veas cuánto tiene
-    setTargetBalance(person.currentBalance?.toString() || '0');
+    setAmountInput('');
   };
 
-  const handleAdjust = () => {
+  // Cálculos en tiempo real
+  const currentBalance = selectedPerson?.currentBalance || 0;
+  
+  // Parseamos el input permitiendo negativos
+  const inputValue = parseFloat(amountInput);
+  const validAmount = !isNaN(inputValue);
+  const safeInputValue = validAmount ? inputValue : 0;
+  
+  // Lógica para 'difference'
+  const previewBalanceCredit = currentBalance + safeInputValue; // Devolver dinero
+  const previewBalanceDebit = currentBalance - safeInputValue;  // Cobrar dinero
+
+  // Lógica para 'absolute'
+  // Diferencia = (A donde quiero llegar) - (Donde estoy)
+  const differenceAbsolute = safeInputValue - currentBalance;
+
+  const executeAdjustment = async (isCredit: boolean) => {
     if (!selectedPersonId || !selectedPerson) return Alert.alert('Error', 'Selecciona una persona');
     
-    // 1. ¿A cuánto quieres que llegue el saldo?
-    const finalBalance = parseFloat(targetBalance);
-    if (isNaN(finalBalance)) return Alert.alert('Error', 'Monto inválido');
+    // VALIDACIÓN CORREGIDA
+    if (!amountInput.trim() || !validAmount) return Alert.alert('Error', 'Ingresa un monto válido');
     
-    if (!reason.trim()) return Alert.alert('Error', 'El motivo del ajuste es obligatorio');
+    // Solo en modo "Diferencia" exigimos que sea mayor a 0 (no puedes corregir por 0)
+    if (mode === 'difference' && safeInputValue <= 0) {
+        return Alert.alert('Error', 'La diferencia debe ser mayor a 0. Si quieres fijar el saldo en 0, usa el modo "Fijar Saldo".');
+    }
 
-    const currentBalance = selectedPerson.currentBalance || 0;
-    
-    // 2. MATEMÁTICA: Calculamos la diferencia exacta
-    // Ejemplo: Quiero 0. Tengo -2,000,000. Diferencia = 0 - (-2M) = +2M (Hacer un pago)
-    const difference = finalBalance - currentBalance;
+    if (!reason.trim()) return Alert.alert('Error', 'El motivo es obligatorio');
 
-    if (Math.abs(difference) < 1) return Alert.alert('Aviso', 'El saldo ya es igual al monto ingresado.');
+    // Determinar el monto exacto del ajuste según el modo
+    let finalAdjustmentAmount = 0;
+    let finalIsCredit = isCredit; // true = Payment (Sube), false = Purchase (Baja)
 
-    const isCredit = difference > 0; // ¿Estamos sumando dinero? (Abono)
-    const adjustmentAmount = Math.abs(difference);
+    if (mode === 'difference') {
+        finalAdjustmentAmount = safeInputValue;
+    } else {
+        // Modo Absoluto: Calculamos la diferencia nosotros
+        if (Math.abs(differenceAbsolute) === 0) return Alert.alert('Aviso', 'El saldo ya es igual al monto ingresado.');
+        
+        finalAdjustmentAmount = Math.abs(differenceAbsolute);
+        finalIsCredit = differenceAbsolute > 0; // Si es positivo, hay que ABONAR para subir. Si es negativo, hay que RESTAR.
+    }
+
+    const actionText = finalIsCredit ? 'ABONAR (A favor)' : 'CARGAR (Deuda)';
+    const newBalance = finalIsCredit 
+        ? (currentBalance + finalAdjustmentAmount) 
+        : (currentBalance - finalAdjustmentAmount);
 
     Alert.alert(
-      'Confirmar ajuste',
-      `Vas a cambiar el saldo de ₡${currentBalance} a ₡${finalBalance}.\n\n` +
-      `Para lograr esto, se creará automáticamente un ${isCredit ? 'PAGO/ABONO' : 'CARGO/COMPRA'} de ₡${adjustmentAmount}.\n\n` +
+      'Confirmar Ajuste',
+      `Acción: ${actionText}\n` +
+      `Monto del ajuste: ₡${finalAdjustmentAmount}\n\n` +
+      `Saldo Anterior: ₡${currentBalance}\n` +
+      `👉 NUEVO SALDO: ₡${newBalance}\n\n` +
       `Motivo: ${reason}`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Confirmar y Corregir',
+          text: 'Confirmar',
           onPress: async () => {
             setLoading(true);
             try {
-              if (isCredit) {
-                // Hay que subir el saldo (pagar deuda o abonar)
+              if (finalIsCredit) {
                 const adjustmentPayment: Payment = {
                   id: uuid.v4() as string,
                   personId: selectedPersonId,
-                  amount: adjustmentAmount,
+                  amount: finalAdjustmentAmount,
                   date: getLocalDateString(new Date()),
                   type: 'manualAdjustment',
-                  comment: `Ajuste Manual: ${reason} (Saldo ajustado a ${finalBalance})`
+                  comment: `Ajuste: ${reason}`
                 };
                 await addPayment(adjustmentPayment);
               } else {
-                // Hay que bajar el saldo (crear deuda o quitar abono)
                 const adjustmentCharge: Purchase = {
                   id: uuid.v4() as string,
                   personId: selectedPersonId,
-                  amount: adjustmentAmount,
+                  amount: finalAdjustmentAmount,
                   date: getLocalDateString(new Date()),
-                  description: `Ajuste Manual: ${reason} (Saldo ajustado a ${finalBalance})`
+                  description: `Ajuste: ${reason}`
                 };
                 await addPurchase(adjustmentCharge);
               }
-
-              Alert.alert('Éxito', 'Saldo y transacciones corregidos correctamente.');
+              Alert.alert('Éxito', 'Ajuste realizado correctamente.');
               navigation.goBack();
             } catch (error) {
               console.error('Error al ajustar:', error);
-              Alert.alert('Error', 'No se pudo aplicar el ajuste.');
+              Alert.alert('Error', 'Falló el ajuste.');
             } finally {
               setLoading(false);
             }
@@ -129,15 +163,16 @@ export default function ManualAdjustmentScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Seleccionar persona:</Text>
+      <Text style={styles.label}>1. Seleccionar persona:</Text>
       
       {selectedPerson ? (
         <View style={styles.selectedRow}>
-          <Text style={styles.selected}>Seleccionado: {selectedPerson.name}</Text>
+          <Text style={styles.selected}>👤 {selectedPerson.name}</Text>
           <TouchableOpacity
             onPress={() => {
               setSelectedPersonId('');
               setInputFocused(true);
+              setAmountInput('');
             }}
           >
             <Text style={styles.changeBtn}>✏️ Cambiar</Text>
@@ -176,41 +211,99 @@ export default function ManualAdjustmentScreen() {
 
       {selectedPerson && (
         <>
-            <View style={{marginVertical: 15, padding: 10, backgroundColor: isDark ? '#222' : '#e3f2fd', borderRadius: 8}}>
-                <Text style={{color: isDark ? '#ccc' : '#555', textAlign:'center'}}>Saldo Actual (Calculado)</Text>
-                <Text style={{fontSize: 24, fontWeight: 'bold', textAlign: 'center', color: (selectedPerson.currentBalance || 0) < 0 ? '#ff4444' : '#4caf50'}}>
-                    ₡{selectedPerson.currentBalance || 0}
+            {/* VISTA DEL SALDO ACTUAL */}
+            <View style={styles.balanceCard}>
+                <Text style={styles.balanceTitle}>Saldo Actual</Text>
+                <Text style={[styles.balanceText, { color: currentBalance < 0 ? '#ff4444' : '#4caf50' }]}>
+                    ₡{currentBalance}
                 </Text>
             </View>
-            
-            <Text style={styles.label}>NUEVO SALDO DESEADO (₡):</Text>
-            <Text style={{fontSize: 12, color: '#888', marginBottom: 5}}>
-                Pon aquí cuánto debería tener REALMENTE esta persona.
-                (Ej: Pon 0 si quieres borrar la deuda).
+
+            {/* SELECTOR DE MODO */}
+            <View style={styles.tabContainer}>
+                <TouchableOpacity 
+                    style={[styles.tab, mode === 'difference' && styles.activeTab]}
+                    onPress={() => { setMode('difference'); setAmountInput(''); }}
+                >
+                    <Text style={[styles.tabText, mode === 'difference' && styles.activeTabText]}>🔄 Corregir Error</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                    style={[styles.tab, mode === 'absolute' && styles.activeTab]}
+                    onPress={() => { setMode('absolute'); setAmountInput(''); }}
+                >
+                    <Text style={[styles.tabText, mode === 'absolute' && styles.activeTabText]}>🎯 Fijar Saldo</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* INPUTS SEGÚN MODO */}
+            <Text style={styles.label}>
+                {mode === 'difference' 
+                    ? '2. ¿De cuánto fue el error / diferencia?' 
+                    : '2. ¿Cuál debe ser el saldo final exacto?'}
             </Text>
+            
             <TextInput
-                style={[styles.input, { fontSize: 24, fontWeight: 'bold' }]}
-                keyboardType="numeric"
-                value={targetBalance}
-                onChangeText={setTargetBalance}
+                style={[styles.input, { fontSize: 24, fontWeight: 'bold', textAlign: 'center' }]}
+                keyboardType="numeric" // Acepta negativos en la mayoría de teclados
+                placeholder={mode === 'difference' ? "Ej: 5000" : "Ej: 0 o -2000"}
+                placeholderTextColor="#888"
+                value={amountInput}
+                onChangeText={setAmountInput}
             />
 
-            <Text style={styles.label}>Motivo (Obligatorio):</Text>
+            <Text style={styles.label}>3. Motivo (Obligatorio):</Text>
             <TextInput
                 style={styles.input}
-                placeholder="Ej: Corrección de error, Reset de cuenta..."
+                placeholder="Ej: Cobro duplicado, Reset de cuenta..."
                 placeholderTextColor={isDark ? '#999' : '#666'}
                 value={reason}
                 onChangeText={setReason}
             />
 
-            <TouchableOpacity 
-                style={[styles.btn, loading && {opacity: 0.5}]} 
-                onPress={handleAdjust}
-                disabled={loading}
-            >
-                {loading ? <ActivityIndicator color="#fff"/> : <Text style={styles.btnText}>Corregir Saldo</Text>}
-            </TouchableOpacity>
+            {/* BOTONES DE ACCIÓN */}
+            <View style={{marginTop: 20}}>
+                {mode === 'difference' ? (
+                    <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                        {/* BOTÓN DEVOLVER (Abonar) */}
+                        <TouchableOpacity 
+                            style={[styles.actionBtn, {backgroundColor: '#4caf50', marginRight: 5}]}
+                            onPress={() => executeAdjustment(true)}
+                            disabled={loading}
+                        >
+                             <Text style={styles.btnText}>Devolver / Abonar</Text>
+                             <Text style={styles.previewText}>Nuevo Saldo: ₡{previewBalanceCredit}</Text>
+                        </TouchableOpacity>
+
+                        {/* BOTÓN COBRAR (Restar) */}
+                        <TouchableOpacity 
+                            style={[styles.actionBtn, {backgroundColor: '#f44336', marginLeft: 5}]}
+                            onPress={() => executeAdjustment(false)}
+                            disabled={loading}
+                        >
+                             <Text style={styles.btnText}>Cobrar / Restar</Text>
+                             <Text style={styles.previewText}>Nuevo Saldo: ₡{previewBalanceDebit}</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    // MODO ABSOLUTO (Un solo botón)
+                    <View style={{flexDirection: 'row'}}>
+                    <TouchableOpacity 
+                        style={[styles.actionBtn, {backgroundColor: '#2196f3'}]}
+                        onPress={() => executeAdjustment(differenceAbsolute > 0)}
+                        disabled={loading}
+                    >
+                         <Text style={styles.btnText}>Establecer Saldo en ₡{safeInputValue}</Text>
+                         <Text style={styles.previewText}>
+                            {validAmount 
+                                ? `El sistema aplicará un ${differenceAbsolute > 0 ? 'ABONO' : 'CARGO'} de ₡${Math.abs(differenceAbsolute)}`
+                                : 'Ingresa un monto para ver el ajuste'}
+                         </Text>
+                    </TouchableOpacity>
+                    </View>
+                )}
+            </View>
+            
+            {loading && <ActivityIndicator style={{marginTop: 10}} color="#fff"/>}
         </>
       )}
     </View>
@@ -228,52 +321,72 @@ function createStyles(isDark: boolean) {
       fontSize: 16,
       marginTop: 15,
       marginBottom: 5,
+      fontWeight: '600',
       color: isDark ? '#eee' : '#000',
     },
     input: {
       borderWidth: 1,
-      borderColor: isDark ? '#888' : '#aaa',
-      borderRadius: 4,
-      padding: 10,
+      borderColor: isDark ? '#555' : '#ccc',
+      borderRadius: 8,
+      padding: 12,
       marginBottom: 5,
+      backgroundColor: isDark ? '#222' : '#fafafa',
       color: isDark ? '#fff' : '#000',
-    },
-    item: {
-      paddingVertical: 10,
-      paddingHorizontal: 10,
-      borderBottomWidth: 1,
-      borderColor: isDark ? '#444' : '#ddd',
-      backgroundColor: isDark ? '#222' : '#f9f9f9'
     },
     selectedRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 10,
-      padding: 10,
-      backgroundColor: isDark ? '#222' : '#eee',
-      borderRadius: 8
+      padding: 12,
+      backgroundColor: isDark ? '#2a2a2a' : '#e3f2fd',
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: isDark ? '#444' : '#bbdefb'
     },
     selected: {
-      fontStyle: 'italic',
-      color: isDark ? '#aaffaa' : 'green',
-      fontWeight: 'bold'
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: isDark ? '#fff' : '#0d47a1',
     },
-    changeBtn: {
-      color: '#007bff',
-      fontWeight: '600',
+    changeBtn: { color: '#2196f3', fontWeight: 'bold' },
+    item: {
+      padding: 12,
+      borderBottomWidth: 1,
+      borderColor: isDark ? '#444' : '#eee',
     },
-    btn: {
-        backgroundColor: '#2196f3',
-        padding: 15,
-        borderRadius: 8,
+    
+    // Estilos Nuevos
+    balanceCard: {
         alignItems: 'center',
-        marginTop: 30
+        marginVertical: 15,
+        padding: 10,
+        backgroundColor: isDark ? '#1e1e1e' : '#f5f5f5',
+        borderRadius: 8
     },
-    btnText: {
-        color: '#fff',
-        fontWeight: 'bold',
-        fontSize: 18
-    }
+    balanceTitle: { color: '#888', fontSize: 14, textTransform: 'uppercase' },
+    balanceText: { fontSize: 28, fontWeight: 'bold' },
+
+    tabContainer: {
+        flexDirection: 'row',
+        marginBottom: 10,
+        borderRadius: 8,
+        backgroundColor: isDark ? '#333' : '#e0e0e0',
+        padding: 2
+    },
+    tab: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 6 },
+    activeTab: { backgroundColor: isDark ? '#555' : '#fff', elevation: 2 },
+    tabText: { fontWeight: '600', color: isDark ? '#aaa' : '#666' },
+    activeTabText: { color: isDark ? '#fff' : '#000' },
+
+    actionBtn: {
+        flex: 1,
+        padding: 15,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        elevation: 3
+    },
+    btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+    previewText: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 4, textAlign: 'center' }
   });
 }
