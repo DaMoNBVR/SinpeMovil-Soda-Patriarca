@@ -157,63 +157,55 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) { console.error(error); throw error; }
   };
 
-  // --- TRANSACCIÓN ATÓMICA: COMPRA ---
+ // --- TRANSACCIÓN ATÓMICA: COMPRA (ESPERA A LA DB) ---
   const addPurchase = async (purchase: Purchase) => {
     try {
-      // Usamos BATCH para asegurar que si falla uno, fallen los dos
+      // 1. Preparamos todo atómicamente
       const batch = writeBatch(db);
-
-      // 1. Crear el recibo de compra
       const purchaseRef = doc(db, 'purchases', purchase.id);
       batch.set(purchaseRef, purchase);
 
-      // 2. Actualizar el saldo de la persona
       const personRef = doc(db, 'persons', purchase.personId);
       batch.update(personRef, {
         currentBalance: increment(-purchase.amount)
       });
 
-      // 3. Ejecutar todo junto atómicamente
+      // 2. ESPERAMOS A FIREBASE (Si falla aquí, la app lanza error y no actualiza nada)
       await batch.commit();
-
-      // 4. Actualizar UI (Recarga segura)
+      
+      // 3. LA VERDAD ABSOLUTA: Traemos el saldo exacto que quedó en Firebase (solo 1 lectura)
       await reloadSinglePerson(purchase.personId);
     } catch (error) {
       console.error('Error al agregar compra:', error);
-      Alert.alert('Error', 'No se pudo registrar la compra.');
+      Alert.alert('Error', 'No se pudo registrar la compra. Revise su conexión.');
       throw error;
     }
   };
 
-  // --- TRANSACCIÓN ATÓMICA: PAGO ---
+  // --- TRANSACCIÓN ATÓMICA: PAGO (ESPERA A LA DB) ---
   const addPayment = async (payment: Payment) => {
     try {
       const batch = writeBatch(db);
-
-      // 1. Crear el recibo de pago
       const paymentRef = doc(db, 'payments', payment.id);
       batch.set(paymentRef, payment);
 
-      // 2. Actualizar el saldo de la persona
       const personRef = doc(db, 'persons', payment.personId);
       batch.update(personRef, {
         currentBalance: increment(payment.amount)
       });
 
-      // 3. Ejecutar todo junto
+      // 2. ESPERAMOS A FIREBASE
       await batch.commit();
       
-      // Lógica de prepago (secundaria)
       if (payment.type === 'prepaid') {
         await updatePrepaidAmount(payment.personId, payment.amount);
       }
-
-      // 4. Actualizar UI
+      
+      // 3. LA VERDAD ABSOLUTA: Actualizamos la lista con el dato real de la DB
       await reloadSinglePerson(payment.personId);
-
     } catch (error) {
       console.error('Error al agregar pago:', error);
-      Alert.alert('Error', 'No se pudo registrar el pago.');
+      Alert.alert('Error', 'No se pudo registrar el pago. Revise su conexión.');
       throw error;
     }
   };

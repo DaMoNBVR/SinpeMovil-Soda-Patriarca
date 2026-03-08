@@ -53,24 +53,26 @@ export default function PersonDetailScreen() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  
+  // 👉 NUEVO: Estado para el "Freno de mano"
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 👉 NUEVO: Separamos la función para poder llamarla al terminar un pago
+  const fetchHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const history = await getPersonTransactions(personId);
+      setPurchases(history.purchases);
+      setPayments(history.payments);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   React.useEffect(() => {
-    let active = true;
-    const fetchHistory = async () => {
-      try {
-        const history = await getPersonTransactions(personId);
-        if (active) {
-          setPurchases(history.purchases);
-          setPayments(history.payments);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (active) setLoadingHistory(false);
-      }
-    };
     fetchHistory();
-    return () => { active = false; };
   }, [personId]);
 
   if (!person) return <Text>Persona no encontrada</Text>;
@@ -148,12 +150,16 @@ export default function PersonDetailScreen() {
     }
   }
 
+  // 👉 ACTUALIZADO: Manejo seguro del pago con bloqueo y recarga
   const handlePayDebt = () => {
+    if (isSubmitting) return; // Freno de mano: Evita doble clic
+
     Alert.alert('Confirmar pago de deuda', '¿Está seguro de que desea registrar este pago?', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Confirmar',
         onPress: async () => {
+          setIsSubmitting(true); // Bloqueamos el botón
           const deuda = selectedWeekKey === 'general' ? -saldoSemana : -saldoSemana - pagosPosteriores;
           const newPayment: Payment = {
             id: uuid.v4() as string,
@@ -165,10 +171,13 @@ export default function PersonDetailScreen() {
           try {
             await addPayment(newPayment);
             await updatePrepaidAmount(person.id, deuda);
+            await fetchHistory(); // 🔄 OBLIGA a la pantalla a recargar y recalcular saldos
             Alert.alert('Éxito', 'La deuda ha sido pagada');
           } catch (error) {
             console.error('Error al registrar pago de deuda:', error);
-            Alert.alert('Error', 'No se pudo registrar el pago.');
+            // La alerta de error ya se maneja en el DataContext, por lo que aquí no es estrictamente necesario otra
+          } finally {
+            setIsSubmitting(false); // Liberamos el botón siempre, incluso si falla
           }
         },
       },
@@ -253,7 +262,16 @@ export default function PersonDetailScreen() {
       {mensajeDeudaCubierta !== '' && (
         <Text style={[styles.section, { color: 'orange' }]}>{mensajeDeudaCubierta}</Text>
       )}
-      {mostrarBotonPago && <Button title="Pagar deuda" color="#f05454" onPress={handlePayDebt} />}
+      
+      {/* 👉 ACTUALIZADO: Botón con estado visual de carga */}
+      {mostrarBotonPago && (
+        <Button 
+          title={isSubmitting ? "Procesando pago..." : "Pagar deuda"} 
+          color={isSubmitting ? "#888888" : "#f05454"} 
+          disabled={isSubmitting}
+          onPress={handlePayDebt} 
+        />
+      )}
 
       {role === 'admin' && (
         <>
