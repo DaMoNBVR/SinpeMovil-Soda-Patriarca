@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet, Switch } from 'react-native';
+import { View, Text, TextInput, Button, Alert, StyleSheet, Switch, TouchableOpacity } from 'react-native';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { useTheme } from '../context/ThemeContext';
@@ -73,7 +73,19 @@ export default function RegisterUserScreen() {
                 <Switch value={isAdmin} onValueChange={setIsAdmin} />
             </View>
 
-            <Button title="Crear Usuario" onPress={handleRegister} />
+            <TouchableOpacity 
+                                style={{ 
+                                    padding: 12, 
+                                    backgroundColor: '#007bff', 
+                                    borderRadius: 8, 
+                                    alignItems: 'center',
+                                    marginLeft: 5,
+                                    maxHeight: 45,
+                                }}
+                                onPress={handleRegister}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>📄 Crear Usuario</Text>
+            </TouchableOpacity>
         </View>
     );
 }

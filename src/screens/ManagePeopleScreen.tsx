@@ -8,12 +8,16 @@ import {
   StyleSheet, 
   Alert, 
   ActivityIndicator, 
-  Keyboard 
+  Keyboard,
+  Switch
 } from 'react-native';
 import { DataContext } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Person } from '../models';
+
+// 🚀 IMPORTAMOS NUESTRA HERRAMIENTA DE BÚSQUEDA
+import { normalizeText } from '../utils/stringUtils';
 
 export default function ManagePeopleScreen() {
   const { theme } = useTheme();
@@ -28,21 +32,35 @@ export default function ManagePeopleScreen() {
   const [name, setName] = useState('');
   const [guardianName, setGuardianName] = useState('');
   const [guardianPhone, setGuardianPhone] = useState('');
+  const [allowCredit, setAllowCredit] = useState(true);
   
   // Estado para búsqueda
-  const [searchTerm, setSearchTerm] = useState('');
+  const [search, setSearchTerm] = useState('');
 
   // Estado para saber si estamos editando
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Filtramos la lista según la búsqueda
+  // aplicamos normalización a los nombres para mejorar la búsqueda, y filtramos la lista en base al término de búsqueda. 
   const filteredPersons = useMemo(() => {
-    if (!searchTerm) return persons;
-    return persons.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [persons, searchTerm]);
+    if (!search) return persons; // (O uniquePersons, dependiendo de la pantalla)
+    
+    // 1. Normalizamos la búsqueda (quitamos tildes y mayúsculas)
+    const query = normalizeText(search);
+    
+    // 2. Dividimos la búsqueda en palabras separadas por espacios.Ejemplo: "teo jas" se convierte en el arreglo ["teo", "jas"]
+    const searchWords = query.split(' ').filter(word => word.length > 0);
+    
+    return persons.filter(p => {
+        // 3. Unimos todo el texto de la persona en un solo gran bloque de texto
+        const personName = normalizeText(p.name);
+        const guardName = normalizeText(p.guardianName);
+        const fullTextToSearch = `${personName} ${guardName}`;
+        
+        // 4.Verificamos que TODAS las palabras que el usuario escribió estén incluidas en alguna parte de ese bloque de texto.
+        return searchWords.every(word => fullTextToSearch.includes(word));
+    });
+  }, [persons, search]);
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -60,7 +78,8 @@ export default function ManagePeopleScreen() {
                 ...personToUpdate,
                 name: name.trim(),
                 guardianName: guardianName.trim(),
-                guardianPhone: guardianPhone.trim()
+                guardianPhone: guardianPhone.trim(),
+                allowCredit: allowCredit
             };
             await editPerson(updatedPerson);
             Alert.alert('Éxito', 'Cliente actualizado');
@@ -70,7 +89,8 @@ export default function ManagePeopleScreen() {
         await addPerson({
             name: name.trim(),
             guardianName: guardianName.trim(),
-            guardianPhone: guardianPhone.trim()
+            guardianPhone: guardianPhone.trim(),
+            allowCredit: allowCredit
         });
         Alert.alert('Éxito', 'Cliente agregado');
       }
@@ -91,6 +111,7 @@ export default function ManagePeopleScreen() {
     // Aquí mapeamos correctamente los campos de la DB al formulario
     setGuardianName(person.guardianName || ''); 
     setGuardianPhone(person.guardianPhone || '');
+    setAllowCredit(person.allowCredit !== undefined ? person.allowCredit : true);
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -120,6 +141,7 @@ export default function ManagePeopleScreen() {
     setName('');
     setGuardianName('');
     setGuardianPhone('');
+    setAllowCredit(true);
     Keyboard.dismiss();
   };
 
@@ -158,6 +180,27 @@ export default function ManagePeopleScreen() {
             />
         </View>
 
+        {/* --- OPCIÓN DE CRÉDITO (Modo Niños) --- */}
+        <View style={styles.switchRow}>
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                <Ionicons 
+                    name={allowCredit ? "card-outline" : "alert-circle-outline"} 
+                    size={20} 
+                    color={allowCredit ? "#4caf50" : "#ff4444"} 
+                    style={{marginRight: 8}}
+                />
+                <Text style={{color: isDark ? '#eee' : '#333', fontSize: 15}}>
+                    {allowCredit ? "Permitir crédito (Fiado)" : "Solo efectivo / Prepago"}
+                </Text>
+            </View>
+            <Switch
+                value={allowCredit}
+                onValueChange={setAllowCredit}
+                trackColor={{ false: "#767577", true: "#81b0ff" }}
+                thumbColor={allowCredit ? "#007bff" : "#f4f3f4"}
+            />
+        </View>
+
         <View style={styles.buttonRow}>
             {editingId && (
                 <TouchableOpacity 
@@ -192,10 +235,10 @@ export default function ManagePeopleScreen() {
             style={{flex: 1, color: isDark ? '#fff' : '#000', fontSize: 16}}
             placeholder="Buscar en la lista..."
             placeholderTextColor={isDark ? '#aaa' : '#666'}
-            value={searchTerm}
+            value={search}
             onChangeText={setSearchTerm}
         />
-        {searchTerm.length > 0 && (
+        {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearchTerm('')}>
                 <Ionicons name="close-circle" size={20} color={isDark ? '#aaa' : '#666'} />
             </TouchableOpacity>
@@ -283,5 +326,6 @@ const getStyles = (isDark: boolean) => StyleSheet.create({
   },
   itemTitle: { fontSize: 16, fontWeight: 'bold', color: isDark ? '#eee' : '#000' },
   itemSubtitle: { fontSize: 13, color: isDark ? '#aaa' : '#666', marginTop: 4 },
-  actionButtons: { flexDirection: 'row' }
+  actionButtons: { flexDirection: 'row' },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }
 });

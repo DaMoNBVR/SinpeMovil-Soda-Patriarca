@@ -16,6 +16,7 @@ import { Purchase } from '../models';
 import uuid from 'react-native-uuid';
 import { useTheme } from '../context/ThemeContext';
 import { getLocalDateString } from '../utils/dateUtils';
+import { normalizeText } from '../utils/stringUtils';
 
 export default function RegisterPurchaseScreen() {
   const { theme } = useTheme();
@@ -39,16 +40,29 @@ export default function RegisterPurchaseScreen() {
 
   // Búsqueda instantánea en memoria (optimizado con useMemo)
   const filteredPersons = useMemo(() => {
-    if (!search) return [];
-    return persons
-      .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
-      .slice(0, 5); // Limitamos a 5 sugerencias
-  }, [persons, search]);
+    if (!search) return persons; // (O uniquePersons, dependiendo de la pantalla)
+        
+        // 1. Normalizamos la búsqueda (quitamos tildes y mayúsculas)
+        const query = normalizeText(search);
+        
+        // 2. Dividimos la búsqueda en palabras separadas por espacios.Ejemplo: "teo jas" se convierte en el arreglo ["teo", "jas"]
+        const searchWords = query.split(' ').filter(word => word.length > 0);
+        
+        return persons.filter(p => {
+            // 3. Unimos todo el texto de la persona en un solo gran bloque de texto
+            const personName = normalizeText(p.name);
+            const guardName = normalizeText(p.guardianName);
+            const fullTextToSearch = `${personName} ${guardName}`;
+            
+            // 4.Verificamos que TODAS las palabras que el usuario escribió estén incluidas en alguna parte de ese bloque de texto.
+            return searchWords.every(word => fullTextToSearch.includes(word));
+        });
+      }, [persons, search]);
 
   const handleRegisterPurchase = async () => {
-    if (isSubmitting) return; // Evita doble click
+    if (isSubmitting) return;
 
-    if (!selectedPersonId) {
+    if (!selectedPersonId || !selectedPerson) {
       Alert.alert('Error', 'Selecciona una persona');
       return;
     }
@@ -59,32 +73,60 @@ export default function RegisterPurchaseScreen() {
       return;
     }
 
-    setIsSubmitting(true);
+    // --- FUNCIÓN INTERNA PARA EJECUTAR EL GUARDADO ---
+    // La definimos aquí para usarla en la validación normal o en la excepción
+    const executePurchase = async () => {
+      setIsSubmitting(true);
+      const newPurchase: Purchase = {
+        id: uuid.v4() as string,
+        personId: selectedPersonId,
+        amount: parsedAmount,
+        date: getLocalDateString(new Date()),
+        description: description.trim(),
+      };
 
-    const newPurchase: Purchase = {
-      id: uuid.v4() as string,
-      personId: selectedPersonId,
-      amount: parsedAmount,
-      date: getLocalDateString(new Date()),
-      description: description.trim(),
+      try {
+        await addPurchase(newPurchase);
+        Alert.alert('Éxito', 'Compra registrada');
+        setAmount('');
+        setDescription('');
+        setSelectedPersonId('');
+        setSearch('');
+        setInputFocused(false);
+      } catch (error) {
+        console.error('Error al registrar compra:', error);
+        Alert.alert('Error', 'No se pudo registrar la compra.');
+      } finally {
+        setIsSubmitting(false);
+      }
     };
 
-    try {
-      await addPurchase(newPurchase);
-      Alert.alert('Éxito', 'Compra registrada');
-      
-      // Resetear campos
-      setAmount('');
-      setDescription('');
-      setSelectedPersonId('');
-      setSearch('');
-      setInputFocused(false);
-    } catch (error) {
-      console.error('Error al registrar compra:', error);
-      Alert.alert('Error', 'No se pudo registrar la compra.');
-    } finally {
-      setIsSubmitting(false); // Liberamos el botón
+    // --- LÓGICA DE VALIDACIÓN CON EXCEPCIÓN ---
+    const currentBalance = selectedPerson.currentBalance || 0;
+    const finalBalance = currentBalance - parsedAmount;
+
+    if (selectedPerson.allowCredit === false && finalBalance < 0) {
+      // ⚠️ CASO DE EXCEPCIÓN: Mostramos dos botones
+      Alert.alert(
+        '⚠️ Restricción de Crédito',
+        `Este estudiante tiene el crédito desactivado.\n\n` +
+        `Saldo actual: ₡${currentBalance}\n` +
+        `Faltan: ₡${Math.abs(finalBalance)}\n\n` +
+        `¿Desea autorizar esta compra como una excepción?`,
+        [
+          { text: 'No, cancelar', style: 'cancel' },
+          { 
+            text: 'Sí, autorizar', 
+            style: 'destructive', // Color rojo para que sepan que es algo delicado
+            onPress: () => executePurchase() // Si dicen que sí, disparamos el guardado
+          }
+        ]
+      );
+      return; // Detenemos el flujo principal para esperar la decisión del Alert
     }
+
+    // Si el cliente TIENE crédito o el saldo es suficiente, procedemos directo
+    executePurchase();
   };
 
   return (

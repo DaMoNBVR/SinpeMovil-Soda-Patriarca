@@ -16,6 +16,7 @@ import uuid from 'react-native-uuid';
 import { useTheme } from '../context/ThemeContext';
 import { getLocalDateString } from '../utils/dateUtils';
 import { useNavigation } from '@react-navigation/native';
+import { normalizeText } from '../utils/stringUtils';
 
 export default function RegisterPaymentScreen() {
   const { theme } = useTheme();
@@ -39,11 +40,24 @@ export default function RegisterPaymentScreen() {
   const selectedPerson = persons.find((p) => p.id === selectedPersonId);
 
   const filteredPersons = useMemo(() => {
-    if (!search) return [];
-    return persons
-      .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
-      .slice(0, 5);
-  }, [persons, search]);
+    if (!search) return persons; // (O uniquePersons, dependiendo de la pantalla)
+        
+        // 1. Normalizamos la búsqueda (quitamos tildes y mayúsculas)
+        const query = normalizeText(search);
+        
+        // 2. Dividimos la búsqueda en palabras separadas por espacios.Ejemplo: "teo jas" se convierte en el arreglo ["teo", "jas"]
+        const searchWords = query.split(' ').filter(word => word.length > 0);
+        
+        return persons.filter(p => {
+            // 3. Unimos todo el texto de la persona en un solo gran bloque de texto
+            const personName = normalizeText(p.name);
+            const guardName = normalizeText(p.guardianName);
+            const fullTextToSearch = `${personName} ${guardName}`;
+            
+            // 4.Verificamos que TODAS las palabras que el usuario escribió estén incluidas en alguna parte de ese bloque de texto.
+            return searchWords.every(word => fullTextToSearch.includes(word));
+        });
+      }, [persons, search]);
 
   const currentBalance = selectedPerson?.currentBalance || 0;
   
@@ -211,7 +225,7 @@ export default function RegisterPaymentScreen() {
             isSubmitting && { opacity: 0.6 } 
         ]}
         onPress={handleRegisterPayment}
-        disabled={isSubmitting} // <--- ¡AQUÍ ESTÁ LA MAGIA!
+        disabled={isSubmitting}
       >
         {isSubmitting ? (
             <ActivityIndicator color="#fff" />

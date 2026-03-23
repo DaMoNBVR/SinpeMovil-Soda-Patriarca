@@ -176,10 +176,34 @@ export default function FinancialSummaryScreen({ route }: any) {
                 {getRangeLabel()}
             </Text>
 
-            <View style={styles.controls}>
-                <Button title="Cambiar Fecha" onPress={() => setShowPicker(true)} />
-                <View style={{ width: 10 }} />
-                <Button title="Exportar PDF" onPress={handleExportPDF} />
+            <View style={[styles.controls, { paddingHorizontal: 5 }]}>
+                <TouchableOpacity 
+                    style={{ 
+                        flex: 1, 
+                        padding: 12, 
+                        backgroundColor: '#6c757d', 
+                        borderRadius: 8, 
+                        alignItems: 'center', 
+                        marginRight: 5 
+                    }}
+                    onPress={() => setShowPicker(true)}
+                >
+                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>📅 Cambiar Fecha</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={{ 
+                        flex: 1, 
+                        padding: 12, 
+                        backgroundColor: '#007bff', 
+                        borderRadius: 8, 
+                        alignItems: 'center', 
+                        marginLeft: 5 
+                    }}
+                    onPress={handleExportPDF}
+                >
+                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>📄 Exportar PDF</Text>
+                </TouchableOpacity>
             </View>
 
             {showPicker && (
@@ -247,6 +271,7 @@ export default function FinancialSummaryScreen({ route }: any) {
             )}
         </View>
     );
+    
 }
 
 const getStyles = (isDark: boolean) => StyleSheet.create({

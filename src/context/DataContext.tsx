@@ -1,4 +1,4 @@
-import React, { createContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useEffect, useState, ReactNode } from 'react';
 import { Alert } from 'react-native';
 import { Person, Purchase, Payment } from '../models';
 import { db } from '../firebaseConfig';
@@ -6,7 +6,6 @@ import {
   collection,
   doc,
   updateDoc,
-  setDoc,
   getDocs,
   getDoc,
   query,
@@ -14,7 +13,8 @@ import {
   writeBatch,
   increment,
   orderBy,
-  addDoc
+  addDoc,
+  onSnapshot
 } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 
@@ -24,11 +24,11 @@ interface DataContextType {
   refreshData: () => Promise<void>;
   addPurchase: (purchase: Purchase) => Promise<void>;
   addPayment: (payment: Payment) => Promise<void>;
-  addPerson: (data: { name: string; guardianName?: string; guardianPhone?: string }) => Promise<void>;
+  addPerson: (data: { name: string; guardianName?: string; guardianPhone?: string; allowCredit?: boolean; }) => Promise<void>;
   deletePerson: (id: string) => Promise<void>;
   toggleFavorite: (personId: string) => Promise<void>;
   updatePrepaidAmount: (id: string, amount: number) => Promise<void>;
-  editPerson: (updatedPerson: Person) => Promise<void>;
+  editPerson: (updatedPerson: Person) => Promise<void> ;
   getPersonTransactions: (personId: string) => Promise<{ purchases: Purchase[]; payments: Payment[] }>;
   getTransactionsByDateRange: (startDate: string, endDate: string) => Promise<{ purchases: Purchase[]; payments: Payment[] }>;
   recalculatePersonBalance: (personId: string) => Promise<void>;
@@ -36,6 +36,8 @@ interface DataContextType {
   loadingMore: boolean;
   hasMore: boolean;
 }
+
+import { getLocalDate } from '../utils/dateUtils';
 
 export const DataContext = createContext<DataContextType | undefined>(undefined);
 
@@ -47,29 +49,31 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   const { username } = useAuth();
 
-  const fetchPersons = useCallback(async () => {
+  //onSnapshot
+  useEffect(() => {
     if (!username) return;
+
     setLoading(true);
-    try {
-      const q = query(collection(db, 'persons'), orderBy('name'));
-      const snapshot = await getDocs(q);
+    const q = query(collection(db, 'persons'), orderBy('name'));
+
+    // Abrimos el "túnel" de conexión con Firebase
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const allPersons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Person));
       setPersons(allPersons);
-    } catch (error) {
-      console.error('Error fetching persons:', error);
-    } finally {
       setLoading(false);
-    }
+    }, (error) => {
+      console.error('Error escuchando a las personas en tiempo real:', error);
+      setLoading(false);
+    });
+
+    // Cerramos el túnel si el usuario sale de la app o cierra sesión
+    return () => unsubscribe();
   }, [username]);
 
-  useEffect(() => {
-    if (username) {
-      fetchPersons();
-    }
-  }, [username]);
-
+  // Mantenemos esta función para que los Pull-to-Refresh de las listas no tiren error.
   const refreshData = async () => {
-    await fetchPersons();
+    // Simulamos una pequeña espera visual para mantener la UX, pero ya está sincronizado.
+    return new Promise<void>(resolve => setTimeout(resolve, 500));
   };
 
   const loadMorePersons = async () => {};
@@ -87,7 +91,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // --- FUNCIÓN DE SEGURIDAD (Recalcular Saldo Real) ---
+  // Recalcular Saldo Real (Corrección Manual)
   const recalculatePersonBalance = async (personId: string) => {
     try {
         console.log(`Recalculando saldo para: ${personId}...`);
@@ -109,7 +113,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
         // Actualizamos sin batch aquí porque es una corrección, pero directo a la fuente
         await updateDoc(doc(db, 'persons', personId), { currentBalance: realBalance });
-        setPersons(prev => prev.map(p => p.id === personId ? { ...p, currentBalance: realBalance } : p));
+        // No necesitamos hacer setPersons manual aquí porque onSnapshot lo actualizará en milisegundos
         
         Alert.alert("Éxito", `Saldo sincronizado a: ₡${realBalance}`);
     } catch (error) {
@@ -118,8 +122,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // --- TRANSACCIÓN ATÓMICA: AGREGAR PERSONA ---
-  const addPerson = async (data: { name: string; guardianName?: string; guardianPhone?: string }) => {
+  // Agregamos validación básica para evitar datos basura y errores de UI. La función sigue siendo asíncrona porque interactúa con la base de datos.
+  const addPerson = async (data: { name: string; guardianName?: string; guardianPhone?: string; allowCredit?: boolean }) => {
     if (typeof data !== 'object' || !data.name) {
          Alert.alert("Error", "Datos inválidos.");
          return;
@@ -133,13 +137,12 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         isFavorite: false,
         currentBalance: 0,
         prepaidAmount: 0, 
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        allowCredit: data.allowCredit !== undefined ? data.allowCredit : true
       };
       
-      // En addPerson no necesitamos batch complejo, pero usamos la referencia limpia
-      const docRef = await addDoc(collection(db, 'persons'), newPersonData);
-      const newPerson: Person = { id: docRef.id, ...newPersonData };
-      setPersons((prev) => [...prev, newPerson].sort((a, b) => a.name.localeCompare(b.name)));
+      await addDoc(collection(db, 'persons'), newPersonData);
+      // No hacemos setPersons manual; onSnapshot actualizará la lista solo
     } catch (error) {
       console.error('Error al agregar persona:', error);
       Alert.alert('Error', 'No se pudo agregar la persona.');
@@ -148,19 +151,16 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   const updatePrepaidAmount = async (id: string, amount: number) => {
     try {
-      // Usamos updateDoc simple aquí, no crítico para el balance global de deuda
       const person = persons.find((p) => p.id === id);
       if (!person) return;
       const newAmount = (person.prepaidAmount || 0) + amount;
       await updateDoc(doc(db, 'persons', id), { prepaidAmount: newAmount });
-      setPersons(prev => prev.map(p => p.id === id ? { ...p, prepaidAmount: newAmount } : p));
     } catch (error) { console.error(error); throw error; }
   };
 
- // --- TRANSACCIÓN ATÓMICA: COMPRA (ESPERA A LA DB) ---
+ // compra y pago son transacciones atómicas: si falla una parte, no se registra nada. Esto evita inconsistencias en el balance.
   const addPurchase = async (purchase: Purchase) => {
     try {
-      // 1. Preparamos todo atómicamente
       const batch = writeBatch(db);
       const purchaseRef = doc(db, 'purchases', purchase.id);
       batch.set(purchaseRef, purchase);
@@ -170,10 +170,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         currentBalance: increment(-purchase.amount)
       });
 
-      // 2. ESPERAMOS A FIREBASE (Si falla aquí, la app lanza error y no actualiza nada)
       await batch.commit();
       
-      // 3. LA VERDAD ABSOLUTA: Traemos el saldo exacto que quedó en Firebase (solo 1 lectura)
+      //onSnapshot se encargará de la UI general, pero mantenemos esto por redundancia de seguridad
       await reloadSinglePerson(purchase.personId);
     } catch (error) {
       console.error('Error al agregar compra:', error);
@@ -182,7 +181,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // --- TRANSACCIÓN ATÓMICA: PAGO (ESPERA A LA DB) ---
+  // Similar a addPurchase, pero para pagos. Si es un pago prepago, también actualizamos el monto prepago. Todo en una sola transacción para evitar inconsistencias.
   const addPayment = async (payment: Payment) => {
     try {
       const batch = writeBatch(db);
@@ -194,14 +193,12 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         currentBalance: increment(payment.amount)
       });
 
-      // 2. ESPERAMOS A FIREBASE
       await batch.commit();
       
       if (payment.type === 'prepaid') {
         await updatePrepaidAmount(payment.personId, payment.amount);
       }
       
-      // 3. LA VERDAD ABSOLUTA: Actualizamos la lista con el dato real de la DB
       await reloadSinglePerson(payment.personId);
     } catch (error) {
       console.error('Error al agregar pago:', error);
@@ -215,7 +212,6 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       const person = persons.find((p) => p.id === personId);
       if (!person) return;
       const updatedValue = !(person.isFavorite ?? false);
-      setPersons((prev) => prev.map((p) => (p.id === personId ? { ...p, isFavorite: updatedValue } : p)));
       await updateDoc(doc(db, 'persons', personId), { isFavorite: updatedValue });
     } catch (error) { console.error(error); }
   };
@@ -225,9 +221,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       await updateDoc(doc(db, 'persons', updatedPerson.id), { 
         name: updatedPerson.name,
         guardianName: updatedPerson.guardianName,
-        guardianPhone: updatedPerson.guardianPhone
+        guardianPhone: updatedPerson.guardianPhone,
+        allowCredit: updatedPerson.allowCredit !== undefined ? updatedPerson.allowCredit : true
       });
-      setPersons((prev) => prev.map((person) => (person.id === updatedPerson.id ? updatedPerson : person)));
     } catch (error) { throw error; }
   };
 
@@ -236,7 +232,6 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       const batch = writeBatch(db);
       batch.delete(doc(db, 'persons', id));
       await batch.commit();
-      setPersons((prev) => prev.filter((person) => person.id !== id));
     } catch (error) {
       console.error('Error al eliminar:', error);
       Alert.alert('Error', 'No se pudo eliminar.');
@@ -246,15 +241,25 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   const getPersonTransactions = async (personId: string) => {
      try {
+      // 1. Pedimos TODO sin importar la fecha
       const purchasesQ = query(collection(db, 'purchases'), where('personId', '==', personId));
       const paymentsQ = query(collection(db, 'payments'), where('personId', '==', personId));
+      
       const [pSnap, paySnap] = await Promise.all([getDocs(purchasesQ), getDocs(paymentsQ)]);
+      
       const purchases = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as Purchase));
       const payments = paySnap.docs.map(d => ({ id: d.id, ...d.data() } as Payment));
+      
+      // 2. Ordenamos del más nuevo al más viejo
       purchases.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       payments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      // 3. Devolvemos TODO el historial completo a la pantalla
       return { purchases, payments };
-    } catch (e) { return { purchases: [], payments: [] }; }
+    } catch (e) { 
+      console.error("Error trayendo historial completo:", e);
+      return { purchases: [], payments: [] }; 
+    }
   };
 
   const getTransactionsByDateRange = async (startDate: string, endDate: string) => {

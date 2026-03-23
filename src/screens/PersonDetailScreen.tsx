@@ -1,5 +1,5 @@
-import React, { useContext, useState } from 'react';
-import { View, Text, StyleSheet, Button, Alert, Linking, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useContext, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Alert, Linking, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import uuid from 'react-native-uuid';
@@ -9,10 +9,8 @@ import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/StackNavigator';
 import { Payment } from '../models';
 import { useTheme } from '../context/ThemeContext';
-import { commonStyles } from '../Styles/commonStyles';
-import { getLocalDate, groupEventsByWeek } from '../utils/dateUtils';
+import { getLocalDate, groupEventsByWeek, getLocalDateString } from '../utils/dateUtils';
 import { sharePDFForPerson } from '../utils/pdfGenerator';
-import { getLocalDateString } from '../utils/dateUtils';
 
 function getWeekRangeLabel(startDate: Date): string {
   const endDate = new Date(startDate);
@@ -22,14 +20,10 @@ function getWeekRangeLabel(startDate: Date): string {
 
 function getPaymentDescription(type: string, comment?: string): string {
   switch (type) {
-    case 'debtPayment':
-      return 'Pago de deuda';
-    case 'manualAdjustment':
-      return `Ajuste manual${comment ? ` (${comment})` : ''}`;
-    case 'prepaid':
-      return 'Pago adelantado';
-    default:
-      return type;
+    case 'debtPayment': return 'Pago de deuda';
+    case 'manualAdjustment': return `Ajuste manual${comment ? ` (${comment})` : ''}`;
+    case 'prepaid': return 'Pago adelantado';
+    default: return type;
   }
 }
 
@@ -39,29 +33,28 @@ export default function PersonDetailScreen() {
   const { personId } = params;
   const { theme } = useTheme();
   const { role } = useAuth();
+  const isDark = theme === 'dark';
   const styles = createStyles(theme);
 
   const context = useContext(DataContext);
   if (!context) return <Text>Error: contexto no disponible</Text>;
 
-  // AÑADIDO: recalculatePersonBalance
   const { persons, addPayment, updatePrepaidAmount, getPersonTransactions, recalculatePersonBalance } = context;
-  
-  // LIVE DATA: Buscamos a la persona directo del estado para ver cambios instantáneos
   const person = persons.find((p) => p.id === personId);
 
   const [purchases, setPurchases] = useState<any[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  
-  // 👉 NUEVO: Estado para el "Freno de mano"
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Iniciamos en "recent" (Últimos 15 días)
+  const [selectedWeekKey, setSelectedWeekKey] = useState<string>('recent');
 
-  // 👉 NUEVO: Separamos la función para poder llamarla al terminar un pago
   const fetchHistory = async () => {
     setLoadingHistory(true);
     try {
-      const history = await getPersonTransactions(personId);
+      // Pedimos TODO el historial al context (Asegúrate de haber actualizado el DataContext.tsx también)
+      const history = await getPersonTransactions(personId); 
       setPurchases(history.purchases);
       setPayments(history.payments);
     } catch (e) {
@@ -71,7 +64,7 @@ export default function PersonDetailScreen() {
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetchHistory();
   }, [personId]);
 
@@ -79,29 +72,35 @@ export default function PersonDetailScreen() {
 
   const todayStr = getLocalDateString(new Date());
 
-  const personPurchases = purchases;
-  const personPayments = payments;
-
-  const groupedPurchases = groupEventsByWeek(personPurchases);
-  const groupedPayments = groupEventsByWeek(personPayments);
-
+  // Agrupamos para tener las opciones del menú
+  const groupedPurchases = groupEventsByWeek(purchases);
+  const groupedPayments = groupEventsByWeek(payments);
   const allWeekGroups = Array.from(
     new Map([...groupedPurchases, ...groupedPayments].map((g) => [g.key, g])).values()
   ).sort((a, b) => b.startDate.getTime() - a.startDate.getTime());
 
-  const [selectedWeekKey, setSelectedWeekKey] = useState<string>('general');
+  // Lógica para filtrar visualmente los últimos 15 días
+  const limitDate = new Date();
+  limitDate.setDate(limitDate.getDate() - 15);
+  limitDate.setHours(0, 0, 0, 0);
 
-  const currentWeekPurchases =
-    selectedWeekKey === 'general'
-      ? personPurchases
-      : groupedPurchases.find((g) => g.key === selectedWeekKey)?.events || [];
+  // FILTRAMOS LO QUE SE VA A MOSTRAR EN PANTALLA
+  let visiblePurchases = [];
+  let visiblePayments = [];
 
-  const currentWeekPayments =
-    selectedWeekKey === 'general'
-      ? personPayments
-      : groupedPayments.find((g) => g.key === selectedWeekKey)?.events || [];
+  if (selectedWeekKey === 'recent') {
+    visiblePurchases = purchases.filter(p => getLocalDate(p.date) >= limitDate);
+    visiblePayments = payments.filter(p => getLocalDate(p.date) >= limitDate);
+  } else if (selectedWeekKey === 'all') {
+    visiblePurchases = purchases;
+    visiblePayments = payments;
+  } else {
+    visiblePurchases = groupedPurchases.find((g) => g.key === selectedWeekKey)?.events || [];
+    visiblePayments = groupedPayments.find((g) => g.key === selectedWeekKey)?.events || [];
+  }
 
-  const sortedEvents = [...personPurchases, ...personPayments].sort(
+  // CÁLCULO DE SALDOS EXACTOS
+  const sortedEvents = [...purchases, ...payments].sort(
     (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
   );
 
@@ -110,57 +109,43 @@ export default function PersonDetailScreen() {
   const endDate = startDate ? new Date(startDate.getTime() + 6 * 86400000) : undefined;
 
   let saldoInicial = 0;
-  let saldoSemana = 0;
-  let pagosPosteriores = 0;
-  let deudaSemana = 0;
-  let pagosDesdeSemana = 0;
+  let saldoPeriodo = 0;
 
   for (const event of sortedEvents) {
     const fecha = getLocalDate(event.date);
     const esPago = (event as Payment).type !== undefined;
     const monto = esPago ? (event as Payment).amount : -event.amount;
 
-    if (selectedWeekKey === 'general') {
-      saldoSemana += monto;
+    if (selectedWeekKey === 'all') {
+      saldoPeriodo += monto;
+    } else if (selectedWeekKey === 'recent') {
+      if (fecha < limitDate) saldoInicial += monto;
+      else saldoPeriodo += monto;
     } else {
-      if (startDate && fecha < startDate) {
-        saldoInicial += monto;
-      } else if (startDate && endDate && fecha >= startDate && fecha <= endDate) {
-        saldoSemana += monto;
-        deudaSemana += monto;
-        if (esPago) pagosDesdeSemana += monto;
-      } else if (startDate && endDate && fecha > endDate && esPago) {
-        pagosDesdeSemana += monto;
-      }
+      if (startDate && fecha < startDate) saldoInicial += monto;
+      else if (startDate && endDate && fecha >= startDate && fecha <= endDate) saldoPeriodo += monto;
     }
   }
 
-  const saldoFinal = selectedWeekKey === 'general' ? saldoSemana : saldoInicial + saldoSemana;
+  // Saldo real total siempre es el de Firebase
+  const saldoFinalReal = person.currentBalance || 0;
+  // El saldo visual de lo que pasó en la pantalla (solo para semanas específicas)
+  const saldoVisualFinalPeriodo = saldoInicial + saldoPeriodo;
 
-  let mostrarBotonPago = false;
-  let mensajeDeudaCubierta = '';
+  // Botón de pagar solo sale en 'recent' o 'all' (para evitar pagos parciales raros)
+  const mostrarBotonPago = (selectedWeekKey === 'recent' || selectedWeekKey === 'all') && saldoFinalReal < 0;
 
-  if (selectedWeekKey === 'general') {
-    mostrarBotonPago = saldoSemana < 0;
-  } else if (saldoSemana < 0) {
-    if (pagosDesdeSemana >= -saldoSemana) {
-      mensajeDeudaCubierta = '✅ Esta deuda fue saldada completamente.';
-    } else if (pagosDesdeSemana > 0) {
-      mensajeDeudaCubierta = '⚠️ Esta deuda fue pagada parcialmente.';
-    }
-  }
-
-  // 👉 ACTUALIZADO: Manejo seguro del pago con bloqueo y recarga
   const handlePayDebt = () => {
-    if (isSubmitting) return; // Freno de mano: Evita doble clic
+    if (isSubmitting) return;
 
-    Alert.alert('Confirmar pago de deuda', '¿Está seguro de que desea registrar este pago?', [
+    Alert.alert('Abonar a cuenta', `El saldo deudor TOTAL es ₡${Math.abs(saldoFinalReal)}.\n¿Registrar pago por la totalidad?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Confirmar',
         onPress: async () => {
-          setIsSubmitting(true); // Bloqueamos el botón
-          const deuda = selectedWeekKey === 'general' ? -saldoSemana : -saldoSemana - pagosPosteriores;
+          setIsSubmitting(true);
+          const deuda = Math.abs(saldoFinalReal);
+          
           const newPayment: Payment = {
             id: uuid.v4() as string,
             personId: person.id,
@@ -171,13 +156,12 @@ export default function PersonDetailScreen() {
           try {
             await addPayment(newPayment);
             await updatePrepaidAmount(person.id, deuda);
-            await fetchHistory(); // 🔄 OBLIGA a la pantalla a recargar y recalcular saldos
-            Alert.alert('Éxito', 'La deuda ha sido pagada');
+            await fetchHistory();
+            Alert.alert('Éxito', 'La deuda total ha sido pagada');
           } catch (error) {
-            console.error('Error al registrar pago de deuda:', error);
-            // La alerta de error ya se maneja en el DataContext, por lo que aquí no es estrictamente necesario otra
+            console.error('Error al registrar pago:', error);
           } finally {
-            setIsSubmitting(false); // Liberamos el botón siempre, incluso si falla
+            setIsSubmitting(false);
           }
         },
       },
@@ -185,11 +169,16 @@ export default function PersonDetailScreen() {
   };
 
   const handleExportPDF = () => {
-    const selectedWeekStartDate =
-      selectedWeekKey === 'general'
-        ? undefined
-        : groupedPurchases.find((g) => g.key === selectedWeekKey)?.startDate;
-    sharePDFForPerson(person, currentWeekPurchases, currentWeekPayments, selectedWeekStartDate);
+    let pdfTitleDate: Date | undefined = undefined;
+    let saldoParaPDF = saldoFinalReal; // Por defecto enviamos el saldo total actual
+    
+    // Si NO es "recent" y NO es "all", significa que es una semana específica
+    if (selectedWeekKey !== 'recent' && selectedWeekKey !== 'all') {
+      pdfTitleDate = startDate;
+      saldoParaPDF = saldoVisualFinalPeriodo;
+    }
+    
+    sharePDFForPerson(person, visiblePurchases, visiblePayments, pdfTitleDate, saldoParaPDF);
   };
 
   const handleWhatsApp = () => {
@@ -201,22 +190,16 @@ export default function PersonDetailScreen() {
       ? person.guardianPhone
       : '+506' + person.guardianPhone.replace(/\D/g, '');
 
-    const mensaje = person.guardianName
-      ? `Hola ${person.guardianName},\n\nResumen de ${person.name}:\nSaldo: ${saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldoFinal).toFixed(2)}.`
-      : `Hola ${person.name},\n\nSaldo: ${saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldoFinal).toFixed(2)}.`;
+    const mensaje = `Hola${person.guardianName ? ' ' + person.guardianName : ''},\n\nResumen de la cuenta de ${person.name}:\nSaldo actual: ${saldoFinalReal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldoFinalReal).toFixed(2)}.`;
 
     const url = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(mensaje)}`;
     Linking.openURL(url).catch(() => Alert.alert('Error', 'No se pudo abrir WhatsApp.'));
   };
 
-  // Ordenar por fecha antes de mostrar
-  const sortedPurchases = [...currentWeekPurchases].sort(
-    (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
-  );
+  const sortedPurchases = [...visiblePurchases].sort((a, b) => getLocalDate(b.date).getTime() - getLocalDate(a.date).getTime());
+  const sortedPayments = [...visiblePayments].sort((a, b) => getLocalDate(b.date).getTime() - getLocalDate(a.date).getTime());
 
-  const sortedPayments = [...currentWeekPayments].sort(
-    (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
-  );
+  const pickerTextColor = isDark ? '#ffffff' : '#000000';
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -224,84 +207,148 @@ export default function PersonDetailScreen() {
       {person.guardianName && <Text style={styles.subinfo}>Encargado: {person.guardianName}</Text>}
       {person.guardianPhone && <Text style={styles.subinfo}>📞 {person.guardianPhone}</Text>}
 
-      <Picker selectedValue={selectedWeekKey} onValueChange={setSelectedWeekKey}>
-        <Picker.Item label="Historial general" value="general" />
-        {allWeekGroups.map((g) => (
-          <Picker.Item key={g.key} label={getWeekRangeLabel(g.startDate)} value={g.key} />
-        ))}
-      </Picker>
-
-      {selectedWeekKey !== 'general' && (
-        <>
-          <Text style={styles.section}>Saldo inicial de esta semana: ₡{saldoInicial.toFixed(2)}</Text>
-          <Text style={[styles.section, { color: saldoFinal < 0 ? 'red' : 'green' }]}>Saldo final de esta semana: {saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡{Math.abs(saldoFinal).toFixed(2)}</Text>
-        </>
-      )}
-      {selectedWeekKey === 'general' && (
-        <>
-          <Text style={[styles.section, { color: saldoFinal < 0 ? 'red' : 'green' }]}>Saldo final acumulado: {saldoFinal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡{Math.abs(saldoFinal).toFixed(2)}</Text>
-        </>
-      )}
-
-      {/* BOTÓN DE SINCRONIZACIÓN DE EMERGENCIA */}
-      {role === 'admin' && (
-        <TouchableOpacity 
-            style={{
-                marginTop: 10, 
-                padding: 8, 
-                backgroundColor: '#6c757d', 
-                borderRadius: 5,
-                alignItems: 'center'
-            }}
-            onPress={() => recalculatePersonBalance(person.id)}
+      <View style={{ 
+          borderWidth: 1, 
+          borderColor: isDark ? '#444' : '#ccc', 
+          borderRadius: 8, 
+          marginTop: 15,
+          marginBottom: 10,
+          backgroundColor: isDark ? '#222' : '#f9f9f9'
+      }}>
+        <Picker 
+            selectedValue={selectedWeekKey} 
+            onValueChange={setSelectedWeekKey} 
+            style={{ color: pickerTextColor }} 
+            dropdownIconColor={pickerTextColor} 
+            itemStyle={{ color: pickerTextColor, fontSize: 16 }} 
         >
-            <Text style={{color: '#fff', fontWeight: 'bold'}}>🔄 Sincronizar Saldo (Reparar)</Text>
-        </TouchableOpacity>
+          <Picker.Item label="Últimos 15 días (Reciente)" value="recent" color={pickerTextColor} />
+          <Picker.Item label="Historial Completo (Todo)" value="all" color={pickerTextColor} />
+          {allWeekGroups.map((g) => (
+            <Picker.Item key={g.key} label={getWeekRangeLabel(g.startDate)} value={g.key} color={pickerTextColor} />
+          ))}
+        </Picker>
+      </View>
+
+      {/* 🚀 MOSTRAR SALDOS SEGÚN LA VISTA (SOLUCIÓN AL DUPLICADO) */}
+      
+      {selectedWeekKey === 'recent' && (
+        <View style={{ marginBottom: 10 }}>
+          {/* 👇 Si hay saldo viejo de hace meses, lo ponemos pequeñito como nota */}
+          {saldoInicial !== 0 && (
+            <Text style={[styles.section, { fontSize: 16, color: isDark ? '#aaa' : '#666', marginBottom: 5 }]}>
+              (Incluye saldo arrastrado anterior a este periodo: ₡{saldoInicial.toFixed(2)})
+            </Text>
+          )}
+          {/* 👇 El saldo principal es el TOTAL REAL GRANDE */}
+          <Text style={[styles.section, { color: saldoFinalReal < 0 ? '#ff6b6b' : '#4caf50', fontSize: 24 }]}>
+            Saldo Actual Total: {saldoFinalReal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡{Math.abs(saldoFinalReal).toFixed(2)}
+          </Text>
+        </View>
       )}
 
-      {mensajeDeudaCubierta !== '' && (
-        <Text style={[styles.section, { color: 'orange' }]}>{mensajeDeudaCubierta}</Text>
+      {selectedWeekKey === 'all' && (
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.section, { color: saldoFinalReal < 0 ? '#ff6b6b' : '#4caf50', fontSize: 24 }]}>
+            Saldo Total: {saldoFinalReal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡{Math.abs(saldoFinalReal).toFixed(2)}
+          </Text>
+        </View>
+      )}
+
+      {selectedWeekKey !== 'recent' && selectedWeekKey !== 'all' && (
+        <View style={{ marginBottom: 10 }}>
+          <Text style={styles.section}>Saldo al iniciar esta semana: ₡{saldoInicial.toFixed(2)}</Text>
+          <Text style={[styles.section, { color: saldoVisualFinalPeriodo < 0 ? '#ff6b6b' : '#4caf50', fontSize: 20 }]}>
+            Saldo al finalizar la semana: {saldoVisualFinalPeriodo < 0 ? 'Deuda' : 'A favor'} de ₡{Math.abs(saldoVisualFinalPeriodo).toFixed(2)}
+          </Text>
+        </View>
+      )}
+
+      <View style={{ marginTop: 10 }}>
+        {role === 'admin' && (
+          <View style={{ marginBottom: 15 }}>
+            <TouchableOpacity 
+                style={{ padding: 12, backgroundColor: '#6c757d', borderRadius: 8, alignItems: 'center' }}
+                onPress={() => recalculatePersonBalance(person.id)}
+            >
+                <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>🔄 Sincronizar Saldo</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
+        {mostrarBotonPago && (
+          <View style={{ marginBottom: 15 }}>
+            <TouchableOpacity 
+                style={{ padding: 12, backgroundColor: isSubmitting ? "#888888" : "#f05454", borderRadius: 8, alignItems: 'center' }}
+                disabled={isSubmitting}
+                onPress={handlePayDebt}
+            >
+                <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>
+                  {isSubmitting ? "Procesando pago..." : "💰 Abonar deuda total"}
+                </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {role === 'admin' && (
+          <View style={{ marginBottom: 15 }}>
+            <TouchableOpacity 
+                style={{ padding: 12, backgroundColor: '#FFA500', borderRadius: 8, alignItems: 'center' }}
+                onPress={() => navigation.navigate('ManualAdjustment', { personId: person.id })}
+            >
+                <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>⚙️ Ajuste Manual (Admin)</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={{ marginBottom: 15 }}>
+          <TouchableOpacity 
+              style={{ padding: 12, backgroundColor: '#007bff', borderRadius: 8, alignItems: 'center' }}
+              onPress={handleExportPDF}
+          >
+              <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>📄 Exportar reporte a PDF</Text>
+          </TouchableOpacity>
+        </View>
+
+        {person.guardianPhone && (
+          <View style={{ marginBottom: 15 }}>
+            <TouchableOpacity 
+                style={{ padding: 12, backgroundColor: '#25D366', borderRadius: 8, alignItems: 'center' }}
+                onPress={handleWhatsApp}
+            >
+                <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>💬 Enviar por WhatsApp</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      <Text style={styles.section}>Compras mostradas:</Text>
+      {loadingHistory ? (
+        <ActivityIndicator size="small" color="#007bff" style={{marginTop: 10, alignSelf: 'flex-start'}}/>
+      ) : sortedPurchases.length === 0 ? (
+        <Text style={{color: '#888', fontStyle: 'italic'}}>No hay compras registradas en este periodo.</Text>
+      ) : (
+        sortedPurchases.map((item) => (
+          <Text style={styles.item} key={item.id}>
+            📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount.toFixed(2)} - {item.description || 'Sin descripción'}
+          </Text>
+        ))
+      )}
+
+      <Text style={styles.section}>Pagos y ajustes mostrados:</Text>
+      {loadingHistory ? (
+        <ActivityIndicator size="small" color="#007bff" style={{marginTop: 10, alignSelf: 'flex-start'}}/>
+      ) : sortedPayments.length === 0 ? (
+        <Text style={{color: '#888', fontStyle: 'italic'}}>No hay pagos registrados en este periodo.</Text>
+      ) : (
+        sortedPayments.map((item) => (
+          <Text style={styles.item} key={item.id}>
+            📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount.toFixed(2)} - {getPaymentDescription(item.type, item.comment)}
+          </Text>
+        ))
       )}
       
-      {/* 👉 ACTUALIZADO: Botón con estado visual de carga */}
-      {mostrarBotonPago && (
-        <Button 
-          title={isSubmitting ? "Procesando pago..." : "Pagar deuda"} 
-          color={isSubmitting ? "#888888" : "#f05454"} 
-          disabled={isSubmitting}
-          onPress={handlePayDebt} 
-        />
-      )}
-
-      {role === 'admin' && (
-        <>
-          <View style={{ marginVertical: 10 }} />
-          <Button
-            title="Ajuste Manual (Admin)"
-            color="#FFA500"
-            onPress={() => navigation.navigate('ManualAdjustment', { personId: person.id })}
-          />
-        </>
-      )}
-
-      <View style={{ marginVertical: 10 }} />
-      <Button title="Exportar PDF" onPress={handleExportPDF} />
-      <View style={{ marginVertical: 10 }} />
-      {person.guardianPhone && <Button title="Enviar por WhatsApp" color="#25D366" onPress={handleWhatsApp} />}
-
-      <Text style={styles.section}>Compras:</Text>
-      {sortedPurchases.map((item) => (
-        <Text style={styles.item} key={item.id}>
-          📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {item.description || 'Sin descripción'}
-        </Text>
-      ))}
-
-      <Text style={styles.section}>Pagos y ajustes:</Text>
-      {sortedPayments.map((item) => (
-        <Text style={styles.item} key={item.id}>
-          📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount} - {getPaymentDescription(item.type, item.comment)}
-        </Text>
-      ))}
+      <View style={{height: 40}}/>
     </ScrollView>
   );
 }
@@ -314,6 +361,6 @@ function createStyles(theme: 'light' | 'dark') {
     subtitle: { fontSize: 22, marginBottom: 12 },
     subinfo: { fontSize: 18, color: isDark ? '#bbb' : '#666' },
     section: { fontSize: 20, fontWeight: '600', marginTop: 20, marginBottom: 8, color: isDark ? '#fff' : '#000' },
-    item: { fontSize: 20, fontWeight: '600', paddingVertical: 4, color: isDark ? '#ddd' : '#000' },
+    item: { fontSize: 16, fontWeight: '500', paddingVertical: 4, color: isDark ? '#ddd' : '#333' },
   });
 }

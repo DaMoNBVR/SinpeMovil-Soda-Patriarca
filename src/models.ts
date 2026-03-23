@@ -8,6 +8,7 @@ export interface Person {
   isFavorite?: boolean;
   guardianName?: string;
   guardianPhone?: string;
+  allowCredit?: boolean;
 }
 
 export interface Purchase {

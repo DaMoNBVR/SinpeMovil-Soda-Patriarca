@@ -13,6 +13,7 @@ import { DataContext } from '../context/DataContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
+import { normalizeText } from '../utils/stringUtils';
 
 export default function PeopleListScreen() {
   const context = useContext(DataContext);
@@ -33,7 +34,22 @@ export default function PeopleListScreen() {
   }, [persons]);
 
   const filteredPersons = uniquePersons
-    .filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    .filter((p) => {
+      if (!searchTerm) return true; // Si no hay búsqueda, mostramos todos
+      
+      const query = normalizeText(searchTerm);
+      // 1. Dividimos lo que escribió el empleado en palabras sueltas
+      const searchWords = query.split(' ').filter(word => word.length > 0);
+      
+      const personName = normalizeText(p.name);
+      const guardName = normalizeText(p.guardianName); 
+      
+      // 2. Unimos el nombre del niño y del encargado en una sola cadena gigante
+      const fullTextToSearch = `${personName} ${guardName}`;
+      
+      // 3. Devuelve true solo si TODAS las palabras buscadas existen en esa cadena
+      return searchWords.every(word => fullTextToSearch.includes(word));
+    })
     .sort((a, b) => {
       if (a.isFavorite && !b.isFavorite) return -1;
       if (!a.isFavorite && b.isFavorite) return 1;
