@@ -14,7 +14,6 @@ import { DataContext } from '../context/DataContext';
 import { Payment } from '../models';
 import uuid from 'react-native-uuid';
 import { useTheme } from '../context/ThemeContext';
-import { getLocalDateString } from '../utils/dateUtils';
 import { useNavigation } from '@react-navigation/native';
 import { normalizeText } from '../utils/stringUtils';
 
@@ -76,12 +75,14 @@ export default function RegisterPaymentScreen() {
     }
 
     setIsSubmitting(true); // <--- ACTIVAMOS EL FRENO
+    const now = new Date();
+    const localISO = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
 
     const newPayment: Payment = {
       id: uuid.v4() as string,
       personId: selectedPersonId,
       amount: parsedAmount,
-      date: getLocalDateString(new Date()),
+      date: localISO,
       type: paymentType,
     };
 

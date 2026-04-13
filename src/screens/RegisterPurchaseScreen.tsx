@@ -4,7 +4,6 @@ import {
   View,
   Text,
   TextInput,
-  Button,
   StyleSheet,
   Alert,
   FlatList,
@@ -15,7 +14,6 @@ import { DataContext } from '../context/DataContext';
 import { Purchase } from '../models';
 import uuid from 'react-native-uuid';
 import { useTheme } from '../context/ThemeContext';
-import { getLocalDateString } from '../utils/dateUtils';
 import { normalizeText } from '../utils/stringUtils';
 
 export default function RegisterPurchaseScreen() {
@@ -35,6 +33,23 @@ export default function RegisterPurchaseScreen() {
   
   // --- FRENO DE MANO PARA EVITAR DUPLICADOS ---
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // --- ALERTA TEMPRANA AL SELECCIONAR CLIENTE ---
+  const handleSelectPerson = (person: any) => {
+    // 1. Seleccionamos al cliente en la UI y cerramos la lista
+    setSelectedPersonId(person.id);
+    setInputFocused(false);
+    setSearch('');
+
+    // 2. Disparamos la alerta de inmediato si está bloqueado y sin saldo
+    if (person.allowCredit === false && (person.currentBalance || 0) <= 0) {
+      Alert.alert(
+        '🛑 Fiar Bloqueado',
+        `¡Alto! ${person.name} NO tiene permiso para fiar y su saldo actual es ₡${person.currentBalance || 0}.\n\nCóbrele en efectivo o dígale que abone dinero antes de darle el producto.`,
+        [{ text: 'Entendido', style: 'destructive' }]
+      );
+    }
+  };
 
   const selectedPerson = persons.find((p) => p.id === selectedPersonId);
 
@@ -73,6 +88,9 @@ export default function RegisterPurchaseScreen() {
       return;
     }
 
+
+    const now = new Date();
+    const localISO = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
     // --- FUNCIÓN INTERNA PARA EJECUTAR EL GUARDADO ---
     // La definimos aquí para usarla en la validación normal o en la excepción
     const executePurchase = async () => {
@@ -81,7 +99,7 @@ export default function RegisterPurchaseScreen() {
         id: uuid.v4() as string,
         personId: selectedPersonId,
         amount: parsedAmount,
-        date: getLocalDateString(new Date()),
+        date: localISO,
         description: description.trim(),
       };
 
@@ -166,11 +184,7 @@ export default function RegisterPurchaseScreen() {
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.item}
-                  onPress={() => {
-                    setSelectedPersonId(item.id);
-                    setInputFocused(false);
-                    setSearch('');
-                  }}
+                  onPress={() => handleSelectPerson(item)}
                 >
                   <Text style={[commonStyles.itemText, { color: theme === 'dark' ? '#fff' : '#000' }]}>
                     {item.name} {item.isFavorite ? '⭐' : ''}

@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Alert, Linking, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
@@ -11,6 +11,17 @@ import { Payment } from '../models';
 import { useTheme } from '../context/ThemeContext';
 import { getLocalDate, groupEventsByWeek, getLocalDateString } from '../utils/dateUtils';
 import { sharePDFForPerson } from '../utils/pdfGenerator';
+
+// 🛡️ FUNCIÓN DE APOYO PARA MANEJAR FECHAS NUEVAS Y VIEJAS
+const parseSafeDate = (dateStr: string) => {
+  if (!dateStr) return new Date();
+  // Si tiene una 'T', es el formato nuevo con hora que hicimos hoy
+  if (dateStr.includes('T')) {
+    return new Date(dateStr);
+  }
+  // Si no tiene 'T', es el formato viejo (YYYY-MM-DD), usamos la utilidad del proyecto
+  return getLocalDate(dateStr);
+};
 
 function getWeekRangeLabel(startDate: Date): string {
   const endDate = new Date(startDate);
@@ -47,13 +58,11 @@ export default function PersonDetailScreen() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Iniciamos en "recent" (Últimos 15 días)
   const [selectedWeekKey, setSelectedWeekKey] = useState<string>('recent');
 
   const fetchHistory = async () => {
     setLoadingHistory(true);
     try {
-      // Pedimos TODO el historial al context (Asegúrate de haber actualizado el DataContext.tsx también)
       const history = await getPersonTransactions(personId); 
       setPurchases(history.purchases);
       setPayments(history.payments);
@@ -70,69 +79,75 @@ export default function PersonDetailScreen() {
 
   if (!person) return <Text>Persona no encontrada</Text>;
 
-  const todayStr = getLocalDateString(new Date());
-
-  // Agrupamos para tener las opciones del menú
+  // Agrupamos para el Picker
   const groupedPurchases = groupEventsByWeek(purchases);
   const groupedPayments = groupEventsByWeek(payments);
   const allWeekGroups = Array.from(
     new Map([...groupedPurchases, ...groupedPayments].map((g) => [g.key, g])).values()
   ).sort((a, b) => b.startDate.getTime() - a.startDate.getTime());
 
-  // Lógica para filtrar visualmente los últimos 15 días
-  const limitDate = new Date();
-  limitDate.setDate(limitDate.getDate() - 15);
-  limitDate.setHours(0, 0, 0, 0);
+  // 🛡️ CÁLCULOS OPTIMIZADOS CON useMemo
+  const { visiblePurchases, visiblePayments, saldoInicial, saldoPeriodo, startDate, endDate } = useMemo(() => {
+    let vPurchases = [];
+    let vPayments = [];
+    
+    const limitDate = new Date();
+    limitDate.setDate(limitDate.getDate() - 15);
+    limitDate.setHours(0, 0, 0, 0);
 
-  // FILTRAMOS LO QUE SE VA A MOSTRAR EN PANTALLA
-  let visiblePurchases = [];
-  let visiblePayments = [];
+    const group = allWeekGroups.find((g) => g.key === selectedWeekKey);
+    const sDate = group?.startDate;
+    const eDate = sDate ? new Date(sDate.getTime() + 6 * 86400000) : undefined;
 
-  if (selectedWeekKey === 'recent') {
-    visiblePurchases = purchases.filter(p => getLocalDate(p.date) >= limitDate);
-    visiblePayments = payments.filter(p => getLocalDate(p.date) >= limitDate);
-  } else if (selectedWeekKey === 'all') {
-    visiblePurchases = purchases;
-    visiblePayments = payments;
-  } else {
-    visiblePurchases = groupedPurchases.find((g) => g.key === selectedWeekKey)?.events || [];
-    visiblePayments = groupedPayments.find((g) => g.key === selectedWeekKey)?.events || [];
-  }
-
-  // CÁLCULO DE SALDOS EXACTOS
-  const sortedEvents = [...purchases, ...payments].sort(
-    (a, b) => getLocalDate(a.date).getTime() - getLocalDate(b.date).getTime()
-  );
-
-  const group = groupedPurchases.find((g) => g.key === selectedWeekKey);
-  const startDate = group?.startDate;
-  const endDate = startDate ? new Date(startDate.getTime() + 6 * 86400000) : undefined;
-
-  let saldoInicial = 0;
-  let saldoPeriodo = 0;
-
-  for (const event of sortedEvents) {
-    const fecha = getLocalDate(event.date);
-    const esPago = (event as Payment).type !== undefined;
-    const monto = esPago ? (event as Payment).amount : -event.amount;
-
-    if (selectedWeekKey === 'all') {
-      saldoPeriodo += monto;
-    } else if (selectedWeekKey === 'recent') {
-      if (fecha < limitDate) saldoInicial += monto;
-      else saldoPeriodo += monto;
+    // Filtrado visual
+    if (selectedWeekKey === 'recent') {
+      vPurchases = purchases.filter(p => parseSafeDate(p.date) >= limitDate);
+      vPayments = payments.filter(p => parseSafeDate(p.date) >= limitDate);
+    } else if (selectedWeekKey === 'all') {
+      vPurchases = purchases;
+      vPayments = payments;
     } else {
-      if (startDate && fecha < startDate) saldoInicial += monto;
-      else if (startDate && endDate && fecha >= startDate && fecha <= endDate) saldoPeriodo += monto;
+      vPurchases = groupedPurchases.find((g) => g.key === selectedWeekKey)?.events || [];
+      vPayments = groupedPayments.find((g) => g.key === selectedWeekKey)?.events || [];
     }
-  }
 
-  // Saldo real total siempre es el de Firebase
+    // Cálculo de saldos usando parseSafeDate para no perder la hora en el ordenamiento
+    const sorted = [...purchases, ...payments].sort(
+      (a, b) => parseSafeDate(a.date).getTime() - parseSafeDate(b.date).getTime()
+    );
+
+    let sInicial = 0;
+    let sPeriodo = 0;
+
+    for (const event of sorted) {
+      if (!event || !event.date) continue;
+      const fecha = parseSafeDate(event.date);
+      const esPago = (event as Payment).type !== undefined;
+      const monto = esPago ? (event as Payment).amount : -event.amount;
+
+      if (selectedWeekKey === 'all') {
+        sPeriodo += monto;
+      } else if (selectedWeekKey === 'recent') {
+        if (fecha < limitDate) sInicial += monto;
+        else sPeriodo += monto;
+      } else {
+        if (sDate && fecha < sDate) sInicial += monto;
+        else if (sDate && eDate && fecha >= sDate && fecha <= eDate) sPeriodo += monto;
+      }
+    }
+
+    return { 
+      visiblePurchases: vPurchases, 
+      visiblePayments: vPayments, 
+      saldoInicial: sInicial, 
+      saldoPeriodo: sPeriodo,
+      startDate: sDate,
+      endDate: eDate
+    };
+  }, [selectedWeekKey, purchases, payments]);
+
   const saldoFinalReal = person.currentBalance || 0;
-  // El saldo visual de lo que pasó en la pantalla (solo para semanas específicas)
   const saldoVisualFinalPeriodo = saldoInicial + saldoPeriodo;
-
-  // Botón de pagar solo sale en 'recent' o 'all' (para evitar pagos parciales raros)
   const mostrarBotonPago = (selectedWeekKey === 'recent' || selectedWeekKey === 'all') && saldoFinalReal < 0;
 
   const handlePayDebt = () => {
@@ -146,11 +161,14 @@ export default function PersonDetailScreen() {
           setIsSubmitting(true);
           const deuda = Math.abs(saldoFinalReal);
           
+          const now = new Date();
+          const localISO = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, -1);
+
           const newPayment: Payment = {
             id: uuid.v4() as string,
             personId: person.id,
             amount: deuda,
-            date: todayStr,
+            date: localISO,
             type: 'debtPayment',
           };
           try {
@@ -170,9 +188,8 @@ export default function PersonDetailScreen() {
 
   const handleExportPDF = () => {
     let pdfTitleDate: Date | undefined = undefined;
-    let saldoParaPDF = saldoFinalReal; // Por defecto enviamos el saldo total actual
+    let saldoParaPDF = saldoFinalReal; 
     
-    // Si NO es "recent" y NO es "all", significa que es una semana específica
     if (selectedWeekKey !== 'recent' && selectedWeekKey !== 'all') {
       pdfTitleDate = startDate;
       saldoParaPDF = saldoVisualFinalPeriodo;
@@ -190,14 +207,15 @@ export default function PersonDetailScreen() {
       ? person.guardianPhone
       : '+506' + person.guardianPhone.replace(/\D/g, '');
 
-    const mensaje = `Hola${person.guardianName ? ' ' + person.guardianName : ''},\n\nResumen de la cuenta de ${person.name}:\nSaldo actual: ${saldoFinalReal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldoFinalReal).toFixed(2)}.`;
+    const mensaje = `Hola${person.guardianName ? ' ' + person.guardianName : ''},\n\nResumen de la cuenta de ${person.name}:\nSaldo al finalizar el periodo: ${saldoFinalReal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡${Math.abs(saldoFinalReal).toFixed(2)}.`;
 
     const url = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(mensaje)}`;
     Linking.openURL(url).catch(() => Alert.alert('Error', 'No se pudo abrir WhatsApp.'));
   };
 
-  const sortedPurchases = [...visiblePurchases].sort((a, b) => getLocalDate(b.date).getTime() - getLocalDate(a.date).getTime());
-  const sortedPayments = [...visiblePayments].sort((a, b) => getLocalDate(b.date).getTime() - getLocalDate(a.date).getTime());
+  // 🛡️ ORDENAMIENTO POR TIEMPO REAL (RECIENTE ARRIBA)
+  const sortedPurchases = [...visiblePurchases].sort((a, b) => parseSafeDate(b.date).getTime() - parseSafeDate(a.date).getTime());
+  const sortedPayments = [...visiblePayments].sort((a, b) => parseSafeDate(b.date).getTime() - parseSafeDate(a.date).getTime());
 
   const pickerTextColor = isDark ? '#ffffff' : '#000000';
 
@@ -230,17 +248,13 @@ export default function PersonDetailScreen() {
         </Picker>
       </View>
 
-      {/* 🚀 MOSTRAR SALDOS SEGÚN LA VISTA (SOLUCIÓN AL DUPLICADO) */}
-      
       {selectedWeekKey === 'recent' && (
         <View style={{ marginBottom: 10 }}>
-          {/* 👇 Si hay saldo viejo de hace meses, lo ponemos pequeñito como nota */}
           {saldoInicial !== 0 && (
             <Text style={[styles.section, { fontSize: 16, color: isDark ? '#aaa' : '#666', marginBottom: 5 }]}>
               (Incluye saldo arrastrado anterior a este periodo: ₡{saldoInicial.toFixed(2)})
             </Text>
           )}
-          {/* 👇 El saldo principal es el TOTAL REAL GRANDE */}
           <Text style={[styles.section, { color: saldoFinalReal < 0 ? '#ff6b6b' : '#4caf50', fontSize: 24 }]}>
             Saldo Actual Total: {saldoFinalReal < 0 ? 'Deuda' : 'Saldo a favor'} de ₡{Math.abs(saldoFinalReal).toFixed(2)}
           </Text>
@@ -259,7 +273,7 @@ export default function PersonDetailScreen() {
         <View style={{ marginBottom: 10 }}>
           <Text style={styles.section}>Saldo al iniciar esta semana: ₡{saldoInicial.toFixed(2)}</Text>
           <Text style={[styles.section, { color: saldoVisualFinalPeriodo < 0 ? '#ff6b6b' : '#4caf50', fontSize: 20 }]}>
-            Saldo al finalizar la semana: {saldoVisualFinalPeriodo < 0 ? 'Deuda' : 'A favor'} de ₡{Math.abs(saldoVisualFinalPeriodo).toFixed(2)}
+            Saldo al finalizar el periodo: {saldoVisualFinalPeriodo < 0 ? 'Deuda' : 'A favor'} de ₡{Math.abs(saldoVisualFinalPeriodo).toFixed(2)}
           </Text>
         </View>
       )}
@@ -328,11 +342,18 @@ export default function PersonDetailScreen() {
       ) : sortedPurchases.length === 0 ? (
         <Text style={{color: '#888', fontStyle: 'italic'}}>No hay compras registradas en este periodo.</Text>
       ) : (
-        sortedPurchases.map((item) => (
-          <Text style={styles.item} key={item.id}>
-            📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount.toFixed(2)} - {item.description || 'Sin descripción'}
-          </Text>
-        ))
+        sortedPurchases.map((item) => {
+          const isNewFormat = item.date.includes('T');
+          const dateObj = parseSafeDate(item.date);
+          const fechaStr = dateObj.toLocaleDateString('es-CR');
+          const horaStr = isNewFormat ? dateObj.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }) : '';
+          
+          return (
+            <Text style={styles.item} key={item.id}>
+              📅 {fechaStr} {horaStr ? `| 🕒 ${horaStr} ` : ''}| ₡{item.amount.toFixed(2)} - {item.description || 'Sin descripción'}
+            </Text>
+          );
+        })
       )}
 
       <Text style={styles.section}>Pagos y ajustes mostrados:</Text>
@@ -341,11 +362,18 @@ export default function PersonDetailScreen() {
       ) : sortedPayments.length === 0 ? (
         <Text style={{color: '#888', fontStyle: 'italic'}}>No hay pagos registrados en este periodo.</Text>
       ) : (
-        sortedPayments.map((item) => (
-          <Text style={styles.item} key={item.id}>
-            📅 {getLocalDate(item.date).toLocaleDateString('es-CR')} | ₡{item.amount.toFixed(2)} - {getPaymentDescription(item.type, item.comment)}
-          </Text>
-        ))
+        sortedPayments.map((item) => {
+          const isNewFormat = item.date.includes('T');
+          const dateObj = parseSafeDate(item.date);
+          const fechaStr = dateObj.toLocaleDateString('es-CR');
+          const horaStr = isNewFormat ? dateObj.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }) : '';
+
+          return (
+            <Text style={styles.item} key={item.id}>
+              📅 {fechaStr} {horaStr ? `| 🕒 ${horaStr} ` : ''}| ₡{item.amount.toFixed(2)} - {getPaymentDescription(item.type, item.comment)}
+            </Text>
+          );
+        })
       )}
       
       <View style={{height: 40}}/>
