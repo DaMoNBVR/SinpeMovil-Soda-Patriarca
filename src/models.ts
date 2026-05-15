@@ -1,7 +1,7 @@
 // src/models.ts
 
 export interface Person {
-  id: string;           // identificador único (puede ser UUID o código)
+  id: string;           
   name: string;
   prepaidAmount: number;
   currentBalance?: number;
@@ -9,30 +9,31 @@ export interface Person {
   guardianName?: string;
   guardianPhone?: string;
   allowCredit?: boolean;
+  
+  paymentType?: 'weekly' | 'daily';
+  lastPaymentDate?: string;         
 }
 
 export interface Purchase {
   id: string;
-  personId: string;     // a quién se le hizo la compra (student o teacher)
-  date: string;         // fecha en formato ISO (yyyy-mm-dd)
-  amount: number;       // monto de la compra
-  description?: string; // opcional: descripción del producto
+  personId: string;     
+  date: string;         
+  amount: number;       
+  description?: string; 
 }
 
 export interface Payment {
   id: string;
   personId: string;
   date: string;
-  amount: number;       // pago que hace el padre (puede ser para abonar deuda o prepago)
+  amount: number;       
   type: 'prepaid' | 'debtPayment' | 'manualAdjustment';
   comment?: string;
 }
 
-// src/models.ts
 export interface User {
   id: string;
   username: string;
   password: string;
   role: 'admin' | 'employee';
 }
-

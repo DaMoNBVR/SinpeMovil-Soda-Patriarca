@@ -24,7 +24,7 @@ interface DataContextType {
   refreshData: () => Promise<void>;
   addPurchase: (purchase: Purchase) => Promise<void>;
   addPayment: (payment: Payment) => Promise<void>;
-  addPerson: (data: { name: string; guardianName?: string; guardianPhone?: string; allowCredit?: boolean; }) => Promise<void>;
+  addPerson: (data: { name: string; guardianName?: string; guardianPhone?: string; allowCredit?: boolean; paymentType?: 'weekly' | 'daily'}) => Promise<void>;
   deletePerson: (id: string) => Promise<void>;
   toggleFavorite: (personId: string) => Promise<void>;
   updatePrepaidAmount: (id: string, amount: number) => Promise<void>;
@@ -33,11 +33,10 @@ interface DataContextType {
   getTransactionsByDateRange: (startDate: string, endDate: string) => Promise<{ purchases: Purchase[]; payments: Payment[] }>;
   recalculatePersonBalance: (personId: string) => Promise<void>;
   loadMorePersons: () => Promise<void>;
+  syncAllBalances: () => Promise<void>;
   loadingMore: boolean;
   hasMore: boolean;
 }
-
-import { getLocalDate } from '../utils/dateUtils';
 
 export const DataContext = createContext<DataContextType | undefined>(undefined);
 
@@ -91,7 +90,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Recalcular Saldo Real (Corrección Manual)
+  // Recalcular Saldo Real y Último Pago (Corrección Manual)
   const recalculatePersonBalance = async (personId: string) => {
     try {
         console.log(`Recalculando saldo para: ${personId}...`);
@@ -105,25 +104,61 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
         let totalDebt = 0;
         let totalPaid = 0;
+        let latestPaymentDate: string | null = null; // ⚡ NUEVO: Para cazar el último pago
 
         purchasesSnap.forEach(doc => { totalDebt += (doc.data().amount || 0); });
-        paymentsSnap.forEach(doc => { totalPaid += (doc.data().amount || 0); });
+        
+        paymentsSnap.forEach(doc => { 
+            const payData = doc.data();
+            totalPaid += (payData.amount || 0); 
+
+            // ⚡ Comparamos fechas para encontrar el pago más nuevo
+            if (payData.date) {
+                if (!latestPaymentDate || new Date(payData.date) > new Date(latestPaymentDate)) {
+                    latestPaymentDate = payData.date;
+                }
+            }
+        });
 
         const realBalance = totalPaid - totalDebt;
 
-        // Actualizamos sin batch aquí porque es una corrección, pero directo a la fuente
-        await updateDoc(doc(db, 'persons', personId), { currentBalance: realBalance });
-        // No necesitamos hacer setPersons manual aquí porque onSnapshot lo actualizará en milisegundos
+        // ⚡ Preparamos los datos a actualizar en Firebase
+        const updateData: any = { currentBalance: realBalance };
+        if (latestPaymentDate) {
+            updateData.lastPaymentDate = latestPaymentDate; // Le inyectamos la fecha correcta
+        }
+
+        await updateDoc(doc(db, 'persons', personId), updateData);
         
-        Alert.alert("Éxito", `Saldo sincronizado a: ₡${realBalance}`);
+        Alert.alert(
+            "Éxito", 
+            `Saldo sincronizado a: ₡${realBalance}\nÚltimo pago detectado: ${latestPaymentDate ? new Date(latestPaymentDate).toLocaleDateString('es-CR') : 'Ninguno'}`
+        );
     } catch (error) {
         console.error("Error recalculando:", error);
         Alert.alert("Error", "No se pudo recalcular el saldo.");
     }
   };
 
+  // Sincronizar a TODOS de golpe (Solo para Admin)
+  const syncAllBalances = async () => {
+    try {
+      Alert.alert("Iniciando...", "Sincronizando a todos los clientes. No cierres la app...");
+      
+      // Recorremos a todas las personas y usamos la función que ya creamos
+      for (const person of persons) {
+        await recalculatePersonBalance(person.id);
+      }
+
+      Alert.alert("¡Éxito Total!", "Todos los historiales fueron analizados y sanados. 🏥");
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "La sincronización masiva falló.");
+    }
+  };
+
   // Agregamos validación básica para evitar datos basura y errores de UI. La función sigue siendo asíncrona porque interactúa con la base de datos.
-  const addPerson = async (data: { name: string; guardianName?: string; guardianPhone?: string; allowCredit?: boolean }) => {
+  const addPerson = async (data: { name: string; guardianName?: string; guardianPhone?: string; allowCredit?: boolean; paymentType?: 'weekly' | 'daily' }) => {
     if (typeof data !== 'object' || !data.name) {
          Alert.alert("Error", "Datos inválidos.");
          return;
@@ -138,7 +173,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         currentBalance: 0,
         prepaidAmount: 0, 
         createdAt: new Date().toISOString(),
-        allowCredit: data.allowCredit !== undefined ? data.allowCredit : true
+        allowCredit: data.allowCredit !== undefined ? data.allowCredit : true,
+        paymentType: data.paymentType || 'weekly'
       };
       
       await addDoc(collection(db, 'persons'), newPersonData);
@@ -190,7 +226,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
       const personRef = doc(db, 'persons', payment.personId);
       batch.update(personRef, {
-        currentBalance: increment(payment.amount)
+        currentBalance: increment(payment.amount),
+        lastPaymentDate: payment.date
       });
 
       await batch.commit();
@@ -222,7 +259,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         name: updatedPerson.name,
         guardianName: updatedPerson.guardianName,
         guardianPhone: updatedPerson.guardianPhone,
-        allowCredit: updatedPerson.allowCredit !== undefined ? updatedPerson.allowCredit : true
+        allowCredit: updatedPerson.allowCredit !== undefined ? updatedPerson.allowCredit : true,
+        paymentType: updatedPerson.paymentType || 'weekly'
       });
     } catch (error) { throw error; }
   };
@@ -277,7 +315,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     <DataContext.Provider value={{
         persons, loading, refreshData, loadMorePersons, addPurchase, addPayment, addPerson, 
         deletePerson, toggleFavorite, updatePrepaidAmount, editPerson, getPersonTransactions, 
-        getTransactionsByDateRange, recalculatePersonBalance, loadingMore: false, hasMore: false
+        getTransactionsByDateRange, recalculatePersonBalance, syncAllBalances, loadingMore: false, hasMore: false
       }}>
       {children}
     </DataContext.Provider>

@@ -34,6 +34,8 @@ export default function ManagePeopleScreen() {
   const [guardianPhone, setGuardianPhone] = useState('');
   const [allowCredit, setAllowCredit] = useState(true);
   
+  const [isDaily, setIsDaily] = useState(false);
+  
   // Estado para búsqueda
   const [search, setSearchTerm] = useState('');
 
@@ -43,21 +45,16 @@ export default function ManagePeopleScreen() {
 
   // aplicamos normalización a los nombres para mejorar la búsqueda, y filtramos la lista en base al término de búsqueda. 
   const filteredPersons = useMemo(() => {
-    if (!search) return persons; // (O uniquePersons, dependiendo de la pantalla)
+    if (!search) return persons;
     
-    // 1. Normalizamos la búsqueda (quitamos tildes y mayúsculas)
     const query = normalizeText(search);
-    
-    // 2. Dividimos la búsqueda en palabras separadas por espacios.Ejemplo: "teo jas" se convierte en el arreglo ["teo", "jas"]
     const searchWords = query.split(' ').filter(word => word.length > 0);
     
     return persons.filter(p => {
-        // 3. Unimos todo el texto de la persona en un solo gran bloque de texto
         const personName = normalizeText(p.name);
         const guardName = normalizeText(p.guardianName);
         const fullTextToSearch = `${personName} ${guardName}`;
         
-        // 4.Verificamos que TODAS las palabras que el usuario escribió estén incluidas en alguna parte de ese bloque de texto.
         return searchWords.every(word => fullTextToSearch.includes(word));
     });
   }, [persons, search]);
@@ -79,7 +76,8 @@ export default function ManagePeopleScreen() {
                 name: name.trim(),
                 guardianName: guardianName.trim(),
                 guardianPhone: guardianPhone.trim(),
-                allowCredit: allowCredit
+                allowCredit: allowCredit,
+                paymentType: isDaily ? 'daily' : 'weekly'
             };
             await editPerson(updatedPerson);
             Alert.alert('Éxito', 'Cliente actualizado');
@@ -90,7 +88,8 @@ export default function ManagePeopleScreen() {
             name: name.trim(),
             guardianName: guardianName.trim(),
             guardianPhone: guardianPhone.trim(),
-            allowCredit: allowCredit
+            allowCredit: allowCredit,
+            paymentType: isDaily ? 'daily' : 'weekly'
         });
         Alert.alert('Éxito', 'Cliente agregado');
       }
@@ -108,10 +107,10 @@ export default function ManagePeopleScreen() {
   const handleEdit = (person: Person) => {
     setEditingId(person.id);
     setName(person.name);
-    // Aquí mapeamos correctamente los campos de la DB al formulario
     setGuardianName(person.guardianName || ''); 
     setGuardianPhone(person.guardianPhone || '');
     setAllowCredit(person.allowCredit !== undefined ? person.allowCredit : true);
+    setIsDaily(person.paymentType === 'daily');
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -142,6 +141,7 @@ export default function ManagePeopleScreen() {
     setGuardianName('');
     setGuardianPhone('');
     setAllowCredit(true);
+    setIsDaily(false);
     Keyboard.dismiss();
   };
 
@@ -201,6 +201,27 @@ export default function ManagePeopleScreen() {
             />
         </View>
 
+        {/*OPCIÓN DE TIPO DE PAGO (SINPE Diario) --- */}
+        <View style={styles.switchRow}>
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                <Ionicons 
+                    name={isDaily ? "flash" : "calendar-outline"} 
+                    size={20} 
+                    color={isDaily ? "#ff9800" : "#007bff"} 
+                    style={{marginRight: 8}}
+                />
+                <Text style={{color: isDark ? '#eee' : '#333', fontSize: 15}}>
+                    {isDaily ? "⚡ SINPE Diario" : "📅 Cliente Semanal / Fijo"}
+                </Text>
+            </View>
+            <Switch
+                value={isDaily}
+                onValueChange={setIsDaily}
+                trackColor={{ false: "#767577", true: "#ffcc80" }}
+                thumbColor={isDaily ? "#ff9800" : "#f4f3f4"}
+            />
+        </View>
+
         <View style={styles.buttonRow}>
             {editingId && (
                 <TouchableOpacity 
@@ -255,7 +276,9 @@ export default function ManagePeopleScreen() {
         renderItem={({ item }) => (
           <View style={[styles.item, editingId === item.id && styles.activeItem]}>
             <View style={{flex: 1}}>
-                <Text style={styles.itemTitle}>{item.name}</Text>
+                <Text style={styles.itemTitle}>
+                  {item.paymentType === 'daily' ? '⚡ ' : ''}{item.name}
+                </Text>
                 {/* Aquí mostramos los datos reales si existen */}
                 {(item.guardianName || item.guardianPhone) ? (
                     <Text style={styles.itemSubtitle}>
