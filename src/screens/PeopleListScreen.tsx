@@ -90,17 +90,6 @@ export default function PeopleListScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Personas</Text>
 
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        
-        {/* BOTÓN MÁGICO TEMPORAL - BORRAR DESPUÉS DE USAR */}
-        <TouchableOpacity 
-            style={{ backgroundColor: '#ff9800', padding: 8, borderRadius: 5, marginBottom: 10, alignContent: 'flex-end' }}
-            onPress={syncAllBalances}
-        >
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>⚠️ Sanar BD</Text>
-        </TouchableOpacity>
-      </View>
-
       <View style={styles.tabsContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'weekly' && styles.activeTab]}
